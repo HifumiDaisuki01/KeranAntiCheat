@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <!-- 仅将 Maven Central 镜像到阿里云(国内加速), 其余仓库(papermc等)直连 -->
+    <mirror>
+      <id>aliyun-central</id>
+      <name>Aliyun Central Mirror</name>
+      <mirrorOf>central</mirrorOf>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>

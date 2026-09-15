@@ -1,0 +1,81 @@
+name: KeranAntiCheat
+version: 1.0.1
+main: com.keran.kac.KeranAntiCheat
+api-version: 1.16
+author: Keran Technology Co., Ltd.
+description: Anti Cheat plugin for gun PVP/PVE servers (Paper 1.16.5)
+
+commands:
+  kac:
+    description: Keran Anti Cheat 管理命令
+    usage: /kac help
+    aliases: [kac, kacac]
+    permission: kac.admin
+
+permissions:
+  kac.admin:
+    description: KeranAntiCheat 管理权限(全部命令)
+    default: op
+  kac.notify:
+    description: 接收反作弊告警通知
+    default: op
+  kac.bypass:
+    description: 完全豁免所有检测
+    default: false
+  kac.bypass.fly:
+    description: 豁免飞行检测
+    default: false
+  kac.bypass.speed:
+    description: 豁免速度检测
+    default: false
+  kac.bypass.timer:
+    description: 豁免加速检测
+    default: false
+  kac.bypass.nofall:
+    description: 豁免摔落检测
+    default: false
+  kac.bypass.jesus:
+    description: 豁免水上行走检测
+    default: false
+  kac.bypass.spider:
+    description: 豁免爬墙检测
+    default: false
+  kac.bypass.blink:
+    description: 豁免瞬移检测
+    default: false
+  kac.bypass.elytra:
+    description: 豁免鞘翅加速检测
+    default: false
+  kac.bypass.killaura:
+    description: 豁免自瞄检测
+    default: false
+  kac.bypass.aim:
+    description: 豁免视角旋转检测
+    default: false
+  kac.bypass.reach:
+    description: 豁免攻击距离检测
+    default: false
+  kac.bypass.criticals:
+    description: 豁免暴击检测
+    default: false
+  kac.bypass.autoclicker:
+    description: 豁免连点检测
+    default: false
+  kac.bypass.velocity:
+    description: 豁免防击退检测
+    default: false
+  kac.bypass.xray:
+    description: 豁免透视挖矿检测
+    default: false
+  kac.bypass.nuker:
+    description: 豁免范围挖掘检测
+    default: false
+  kac.bypass.scaffold:
+    description: 豁免搭路检测
+    default: false
+  kac.bypass.fastuse:
+    description: 豁免快速使用检测
+    default: false
+  kac.bypass.chat:
+    description: 豁免聊天刷屏检测
+    default: false

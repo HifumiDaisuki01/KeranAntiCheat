@@ -1,0 +1,167 @@
+# ============================================================
+#  Keran Anti Cheat 配置文件 (Paper 1.16.5 枪械 PVP / PVE 刷怪服)
+#  命令: /kac help   权限: kac.admin(管理) kac.notify(告警) kac.bypass(豁免)
+#  所有阈值均可按需调整; 误报时可调高阈值或临时 /kac toggle <检测名> off
+# ============================================================
+
+settings:
+  # 是否豁免拥有 kac.admin 权限的玩家
+  bypass-admin: true
+  # 是否豁免 OP 玩家
+  bypass-op: true
+  # 详细调试日志(排查误报时打开, 平时建议关闭)
+  verbose: false
+  # 同一种检测的告警冷却(秒), 防止刷屏
+  notify-cooldown-seconds: 3
+  # 违规记录自动保存间隔(分钟)
+  save-vl-minutes: 5
+  # 受到击退(枪械/近战/爆炸)后, 移动类检测豁免的 tick 数(20 tick = 1秒)
+  # 枪械服务必保留, 否则枪械后坐力击退会误报飞行/速度
+  velocity-exempt-ticks: 12
+
+punishments:
+  # 全局默认处罚阶梯: 违规值(vl)达到后执行
+  # 每个检测可在下方 checks.<名称>.kick-vl / ban-vl 单独覆盖
+  default-kick-vl: 20
+  default-ban-vl: 40
+
+messages:
+  kick: "§c[KeranAntiCheat] §f你因违规(§c%reason%§f)被移出服务器"
+  ban: "§c[KeranAntiCheat] §f你因严重违规(§c%reason%§f)被封禁"
+
+checks:
+  # ==================== 移动检测 ====================
+  fly:
+    enabled: true
+    kick-vl: 0            # 0 = 不自动处罚, 仅告警
+    ban-vl: 0
+    # 从离开地面起, 滞空超过该 tick 数且超出正常跳跃高度(1.25格)判定飞行
+    max-air-ticks: 18
+    # 空中完全不动(悬浮)超过该 tick 数判定飞行 (缓降药水/鞘翅会自动豁免)
+    max-hover-ticks: 100
+  speed:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 地面水平速度上限(方块/tick): 疾跑0.28, 速度I=0.34, 速度II=0.39
+    # 枪械服建议保持 0.65 以上, 避免高击退/道具加成误报
+    max-ground-speed: 0.65
+    # 空中水平速度上限
+    max-air-speed: 0.85
+  timer:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒移动包数量上限(正常玩家约20, 加速作弊可达30+)
+    max-moves-per-second: 28
+  nofall:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 下落超过该高度(格)后"安全落地"判定异常
+    min-fall-height: 3.0
+  jesus:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 浸在液体中垂直位移≈0 的最长 tick 数(水上行走特征)
+    max-liquid-ticks: 40
+  spider:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 贴墙持续上升的最长 tick 数
+    max-wall-ticks: 10
+  blink:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 单次移动事件的最大位移(格), 超过判定瞬移
+    max-distance: 2.5
+  elytra:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 鞘翅飞行水平速度上限
+    max-elytra-speed: 3.2
+
+  # ==================== 战斗检测 ====================
+  killaura:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 攻击方向与玩家视线之间的最大夹角(度)
+    # 正常近战攻击夹角一般 < 40°, 自瞄常能打到视角外目标
+    max-angle: 60
+    # 同一 tick 内攻击不同实体的数量上限(0 = 关闭多目标检测)
+    # 注意: 范围伤害技能/爆炸类枪械可能同时命中多个目标, 如误报请调大或设0
+    max-targets-per-tick: 4
+  aim:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 单 tick 内视角旋转上限(度), 正常人类极难超过 90°
+    max-rotation-per-tick: 90
+    # 两个 tick 内视角旋转上限(度)
+    max-rotation-two-ticks: 135
+  reach:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 近战攻击最大距离(格, 眼睛到目标中心 3D 距离)
+    # 正常上限约3.7; 若枪械插件自带近战刀/长武器, 请调大或关掉
+    max-reach: 4.0
+  criticals:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+  autoclicker:
+    enabled: false        # 枪械服默认关闭(近战连点频率高)
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒左键点击上限(正常人类约10-12, 连点器可达20+)
+    max-cps: 18
+  velocity:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 被攻击后 2 tick 内水平位移低于该值判定防击退(格)
+    # 盾牌格挡/低击退武器会被自动豁免
+    min-velocity-distance: 0.05
+
+  # ==================== 世界/交互检测 ====================
+  xray:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 至少挖掘多少个方块后才开始统计(防止早期小样本误报)
+    min-blocks: 25
+    # 挖掘中矿物占比上限(正常玩家一般 < 15%, 透视挖矿常 > 40%)
+    max-ore-ratio: 0.35
+    # 每挖满该数量后重置统计窗口(避免长期挖掘把比例稀释掉)
+    reset-after: 200
+  nuker:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 同一 tick 内破坏相距超过该距离(格)的方块数上限(连锁挖矿破坏的是相邻方块, 不受影响)
+    max-breaks-per-tick: 1
+    min-break-distance: 4
+  scaffold:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒放置方块上限(人类手速一般 < 8/s)
+    max-places-per-second: 12
+  fastuse:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒食用物品上限(正常约 0.6/s)
+    max-uses-per-second: 4
+  chat:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒聊天消息上限
+    max-chats-per-second: 3

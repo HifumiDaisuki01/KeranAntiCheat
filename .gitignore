@@ -1,0 +1,15 @@
+target/
+build/
+out/
+.gradle/
+*.class
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+world/
+world_nether/
+world_the_end/
+server.properties
+eula.txt

@@ -1,0 +1,16 @@
+pluginManagement {
+    repositories {
+        // 阿里云镜像优先(代理 central, 含 asm/cadixdev 等 loom 依赖)
+        maven {
+            name = 'Aliyun'
+            url = 'https://maven.aliyun.com/repository/public'
+        }
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'KeranClient'
