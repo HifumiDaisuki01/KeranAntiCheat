@@ -22,12 +22,14 @@ Thumbs.db
 logs/
 
 # Minecraft 服务端运行文件
-world/
-world_nether/
-world_the_end/
-server.properties
-eula.txt
-banned-*.json
-ops.json
-usercache.json
-whitelist.json
+# 注意: 必须加前导斜杠, 只匹配仓库根目录的存档。
+# 裸写 "world/" 会误伤源码包 check/world/, 导致其无法被 git 跟踪。
+/world/
+/world_nether/
+/world_the_end/
+/server.properties
+/eula.txt
+/banned-*.json
+/ops.json
+/usercache.json
+/whitelist.json
