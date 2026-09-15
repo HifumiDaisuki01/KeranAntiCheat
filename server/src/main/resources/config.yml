@@ -1,0 +1,437 @@
+# ============================================================
+#  Keran Anti Cheat 配置文件 v3.0.0 (Paper 1.20.1 枪械 PVP / PVE 刷怪服)
+#  命令: /kac help   权限: kac.admin(管理) kac.notify(告警) kac.bypass(豁免)
+#
+#  【v3.0 检测引擎说明】
+#  本版把老的"单次超限即计违规"模型换成了「证据累积 + 连续帧验证」模型：
+#    - min-consecutive : 需要连续多少次异常才计入证据（滤掉瞬态尖峰）
+#    - alert-threshold : 累积多少证据分才真正告警（越大越难触发）
+#    - 权重(weight)     : 异常越严重，单次累积的证据分越高
+#  另外全局加入了「违规值时间衰减」与「延迟补偿」，大幅降低误报。
+#
+#  ★ 调参思路：某个检测误报时，优先调大 min-consecutive 与 alert-threshold，
+#    而不是直接关掉检测。这样既能保持检出率又能压掉误报。
+# ============================================================
+
+settings:
+  # 是否豁免拥有 kac.admin 权限的玩家
+  bypass-admin: true
+  # 是否豁免 OP 玩家
+  bypass-op: true
+  # 详细调试日志(排查误报时打开, 平时建议关闭)
+  verbose: false
+  # 同一种检测的告警冷却(秒), 防止刷屏
+  notify-cooldown-seconds: 3
+  # 违规记录自动保存间隔(分钟)
+  save-vl-minutes: 5
+  # 受到击退(枪械/近战/爆炸)后, 移动类检测豁免的 tick 数(20 tick = 1秒)
+  # 枪械服务必保留, 否则枪械后坐力击退会误报飞行/速度
+  velocity-exempt-ticks: 12
+  # 受伤后被击退/爆炸推动的豁免 tick 数（飞行/速度/瞬移检测共用）
+  damage-exempt-ticks: 25
+
+  # ===== 【v3.0 新增】误报抑制参数 =====
+  # 证据分衰减率: 每次"正常观测"削减多少证据分（越大越不容易误报）
+  evidence-decay-rate: 0.35
+  # 违规值时间衰减: 每 10 秒削减多少 VL（0 = 不衰减）。让偶发误报不会长期累积
+  vl-decay-per-10s: 0.5
+  # 延迟补偿比例: 每 100ms 延迟放宽多少阈值（0.15 = 15%）
+  lag-compensation-ratio: 0.15
+  # Reach 检测的延迟补偿比例: 每 100ms 延迟放宽多少射程
+  reach-lag-ratio: 0.12
+  # 离开冰面后的滑行缓冲 tick 数（冰面惯性会持续，需豁免）
+  ice-buffer-ticks: 12
+
+punishments:
+  # 全局默认处罚阶梯: 违规值(vl)达到后执行
+  #
+  # 【v3.1 重要变更】未显式配置的检测器现在会真正回落到这里的默认值。
+  #   - kick-vl / ban-vl 写 0 或不写  → 使用下面的 default-* 值
+  #   - kick-vl / ban-vl 写 -1        → 显式关闭该检测的自动处罚(纯观察模式)
+  # 老版本因下方每个检测都显式写着 0，导致 default-kick-vl 永不生效、反作弊只会告警。
+  # 注意: vl 是加权值（double），阈值含义与老版略有不同
+  default-kick-vl: 20
+  default-ban-vl: 40
+
+messages:
+  kick: "§c[KAC] §f你因违规(§c%reason%§f)被移出服务器"
+  ban: "§c[KAC] §f你因严重违规(§c%reason%§f)被封禁"
+
+# ============================================================
+#  KeranClient 客户端桥接配置
+#  强制安装门槛 / 指纹上报 / MD5 严格校验
+# ============================================================
+
+# 强制门槛: 未安装 KeranClient 的玩家禁止进入
+join:
+  # 是否启用强制安装检查
+  enabled: true
+  # 玩家进服后等待上报/频道注册的秒数(超时即踢)
+  wait-seconds: 5
+  # 超过等待时间未上报是否踢出(强制安装)
+  kick-if-no-client: true
+  # 踢出消息
+  kick-message: "§c[KAC] §f本服务器要求安装 KeranClient 反作弊客户端\n§7请安装后重新加入(联系管理员获取)"
+  # 超时提示(仅提示不踢)
+  alert: true
+
+# 黑名单命中后的处理
+blacklist:
+  # 命中黑名单(已知作弊 mod)是否告警
+  alert: true
+  # 命中黑名单是否直接踢出
+  kick: false
+  # 踢出消息
+  kick-message: "§c[KAC] §f检测到作弊模组, 已断开连接"
+
+# 可疑(关键字命中)处理
+suspicious:
+  # 是否告警(不自动处罚, 供人工判断)
+  alert: true
+
+# 心跳检测
+heartbeat:
+  # 启用心跳超时告警(客户端 mod 被卸载/掉线)
+  enabled: true
+  # 超过该秒数未收到心跳视为掉线
+  timeout-seconds: 90
+  # 掉线告警(仅提示"客户端未安装或已卸载")
+  alert: true
+
+# MD5 严格校验(默认关闭, 手动开启)
+# 开启后: 玩家客户端上报的 mods 目录 MD5 和材质包目录 MD5
+#          必须与下方配置的完全一致, 否则视为"未装客户端"直接踢出
+strict-md5:
+  # 是否启用严格校验
+  enabled: false
+  # 期望的 mods 目录整体 MD5 (留空则该项不校验)
+  mods-dir-md5: ""
+  # 期望的材质包目录整体 MD5 (留空则该项不校验)
+  packs-dir-md5: ""
+  # MD5 不匹配时的踢出消息
+  kick-message: "§c[KAC] §f客户端文件与服务器要求不一致, 已断开连接\n§7请确认 mods/材质包与服务器要求一致后重新加入"
+
+# ===== 提示性文本(全部可自定义, 支持占位符) =====
+# 可用占位符: %player%(玩家名) %details%(详情列表) %seconds%(秒数)
+#             %mods_status%(mods目录校验结果) %packs_status%(材质包目录校验结果)
+messages-bridge:
+  join-no-client: "§e[KAC] §e%player% §7未安装 KeranClient 客户端"
+  blacklist-hit: "§c[KAC] §e%player% §c检测到作弊模组: §f%details%"
+  suspicious-hit: "§e[KAC] §e%player% §7存在可疑模组/文件: §f%details%"
+  jvm-injection: "§c[KAC] §e%player% §c检测到 JVM 注入: §f%details%"
+  suspicious-pack: "§e[KAC] §e%player% §7启用可疑资源包: §f%details%"
+  heartbeat-lost: "§e[KAC] §e%player% §7客户端检测已断开(疑似卸载) 超过 %seconds% 秒"
+  md5-mismatch: "§c[KAC] §e%player% §cMD5 与服务器要求不一致(mods=%mods_status% packs=%packs_status%), 已踢出"
+
+# ============================================================
+#  检测器配置
+#  通用字段: enabled / kick-vl / ban-vl / min-consecutive / alert-threshold
+# ============================================================
+checks:
+
+  # ==================== 移动检测 ====================
+  fly:
+    enabled: true
+    kick-vl: 0            # 0 = 不自动处罚, 仅告警
+    ban-vl: 0
+    # 连续异常次数（飞行特征会持续多 tick，4 次足够稳）
+    min-consecutive: 4
+    alert-threshold: 2.0
+    # 连续上升 tick 上限（已按 ping 自动放宽）
+    max-ascend-ticks: 26
+    # 净升高上限（格）: 正常跳跃最高约 1.25，这里给到 2.2 留足余量
+    max-net-rise: 2.2
+    # 空中完全静止悬浮的 tick 上限（已排除贴墙/方块边缘/附近有支撑的情况）
+    max-hover-ticks: 60
+  speed:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 地面水平速度上限(方块/tick)
+    # 正常: 疾跑0.28, 速度II约0.39；本值已包含药水/跳跃提升/击退抗性加成
+    # 枪械服建议保持 0.70 以上，避免道具加成误报
+    max-ground-speed: 0.72
+    # 空中水平速度上限（跳跃过程中本就会更快）
+    max-air-speed: 1.05
+  timer:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 2.5
+    # 每秒「位置包」数量上限（已排除视角包，正常玩家约 20）
+    max-moves-per-second: 32
+  nofall:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 下落超过该高度(格)后未受摔落伤害判定异常
+    # 已自动豁免水/岩浆/细雪/草垛/床/脚手架/藤蔓/梯子/粘液/蜂蜜等安全落点
+    min-fall-height: 3.5
+  jesus:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 浸在深水中水平行走且垂直不动的最长 tick 数
+    max-liquid-ticks: 50
+  spider:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 贴墙持续上升的最长 tick 数
+    max-wall-ticks: 14
+    # 贴墙上升的净高度上限（格）
+    max-wall-rise: 1.8
+  blink:
+    enabled: true
+    # v3.1: 0 = 沿用 punishments.default-kick-vl；-1 = 显式关闭自动处罚
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 【v3.1 KAC-05 口径变更】现在表示"每 tick 允许的最大位移(格)"，不是"单次事件位移"。
+    # 原因: Paper 内置 moved too quickly! 校验先于插件生效且为丢弃式，
+    #       超限包根本到不了插件，"单次事件位移 >3 格"的判据永远打不中。
+    # 人类参考上限: 疾跑 0.28 / 跳跃加速 ≈0.4 / 鞘翅 ≈0.7 格每tick。
+    # 1.6 已留约 4 倍余量；若服务器有大量击退/爆炸类道具可上调到 2.0~2.5。
+    # 兼容: 若此处仍填 >=3.0 的旧值，插件会自动折算为 1.6。
+    max-distance: 1.6
+    # 非预期来源(非末影珍珠/传送门/插件)的同世界瞬移距离上限(格)
+    max-teleport-distance: 24.0
+  elytra:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 鞘翅飞行水平速度上限
+    max-elytra-speed: 3.2
+    # 俯冲豁免: 垂直位移低于该值时豁免（俯冲本就会提速）
+    dive-exempt-dy: -0.35
+
+  # ---- 【v3.0 新增】移动类检测 ----
+  noslow:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 使用物品（拉弓/举盾/进食）时的速度上限，超出即无减速
+    max-use-speed: 0.42
+    # 需要连续多少 tick 才计入
+    min-ticks: 8
+  step:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 单 tick 垂直上升上限（正常只能跨 0.6 格台阶）
+    max-step-height: 0.62
+  groundspoof:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.0
+    # 连续多少 tick 在下坠中上报落地才判定
+    min-ticks: 4
+
+  # ==================== 战斗检测 ====================
+  killaura:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 攻击方向与玩家视线之间的最大夹角(度)
+    # v3.0 已从 60° 放宽到 75°（近战扫击/目标移动会产生大夹角）
+    max-angle: 75
+    # 同一 tick 内攻击不同实体的数量上限（0 = 关闭）
+    # 爆炸/范围伤害会同时命中多个聚集目标，因此还要求目标「彼此分散」
+    max-targets-per-tick: 3
+    # 目标间的最小分散距离(格)：小于该距离视为范围伤害，豁免
+    target-spread-distance: 3.0
+    # 短时间内切换目标的次数上限
+    fast-switch-count: 6
+  aim:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 单帧视角突变上限(度)。人类甩枪极限约 180°，这里放宽到 250° 只抓非人类行为
+    max-instant-rotation: 250
+    # GCD 灵敏度一致性分析：样本数与最小网格步长
+    # 瞄准机器人直接设置角度，增量无法形成稳定的鼠标灵敏度网格
+    gcd-min-samples: 20
+    min-gcd: 0.002
+    # 匀速跟踪分析：人类视角速度有波动，机器人非常平稳
+    smooth-min-samples: 12
+    smooth-angle-range: 60
+  reach:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 4
+    alert-threshold: 3.0
+    # 近战攻击最大距离(格, 眼睛到目标眼睛 3D 距离)
+    # v3.0 会自动叠加：延迟补偿 + 目标移动补偿 + 武器附加射程
+    max-reach: 4.0
+    # 枪械插件若给所有近战武器统一加了射程，改这里（格）
+    global-weapon-bonus: 0.0
+    # 按物品单独指定附加射程（枪械服的近战刀/长柄武器等）
+    # 示例:
+    # weapon-bonus:
+    #   DIAMOND_SWORD: 1.5
+    #   NETHERITE_SWORD: 2.0
+  criticals:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 4
+    alert-threshold: 2.5
+  autoclicker:
+    enabled: true         # v3.0: 默认开启(核心判据为间隔规律性, 不再依赖 CPS, 自动武器不会误判)
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 3.0
+    # CPS 辅助上限（宽松设置，核心判据是下面的间隔规律性）
+    max-cps: 26
+    # 点击间隔规律性分析：连点器的间隔方差极小，人类必然抖动大
+    # min-cv 越小越难触发(越宽松)。人类手点通常 CV>0.15, 连点器/宏通常 CV<0.05
+    min-samples: 20
+    min-cv: 0.045
+  velocity:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 2.5
+    # 被攻击后 3 tick 内水平位移低于该值判定防击退(格)
+    min-velocity-distance: 0.08
+    # 检查延迟 tick 数
+    check-delay-ticks: 3
+    # 需要连续多少次无击退才判定
+    required-streak: 3
+    # 击退抗性高于该值的玩家豁免（下界合金甲/附魔）
+    max-kb-resist: 0.5
+
+  # ---- 【v3.0 新增】战斗类检测 ----
+  antikb:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 2.5
+    # 击退抗性高于该值豁免（与 velocity 独立配置）
+    exempt-kb-resist: 0.4
+    check-delay-ticks: 4
+    required-streak: 4
+  hitbox:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 4
+    alert-threshold: 3.0
+  backtrack:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 3.0
+    # 超过该 ping(ms) 的玩家不做判定（延迟太高无法可靠区分）
+    max-compensated-ping: 300
+    # 额外允许的回溯 tick 数（心跳抖动余量）
+    extra-ticks: 1.0
+    # 最大回溯距离上限(格)
+    max-offset: 1.8
+    # 基础射程
+    base-reach: 4.0
+  autoblock:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 连续多少次攻击同时格挡才判定
+    required-count: 3
+
+  # ==================== 世界/交互检测 ====================
+  xray:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 2.5
+    # 至少挖掘多少个方块后才开始统计（v3.0 从 25 提高到 60，降低小样本误报）
+    min-blocks: 60
+    # 挖掘中矿物占比上限（珍贵矿物双倍权重）
+    max-ore-ratio: 0.30
+    # 连续多少次「未经石层直取珍贵矿物」才判定（透视强特征）
+    max-ores-without-stone: 6
+    # 每挖满该数量后重置统计窗口
+    reset-after: 300
+  nuker:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 3.0
+    # 同一 tick 内破坏「非相邻」方块的数量上限（相邻方块=连锁挖矿，自动豁免）
+    max-breaks-per-tick: 3
+    # 判定为「远距离」的最小间距(格)
+    min-break-distance: 5.0
+  scaffold:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 2.5
+    # 每秒放置方块上限（v3.0 从 12 提高到 16，避免高速搭路误报）
+    max-places-per-second: 16
+  fastuse:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 3
+    alert-threshold: 2.5
+    # 两次成功进食的最小间隔(ms) —— 基于进食动画的物理校验
+    min-interval-ms: 400
+    # 辅助判据：每秒食用次数上限
+    max-uses-per-second: 5
+  chat:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    # 每秒聊天消息上限
+    max-chats-per-second: 4
+
+  # ---- 【v3.0 新增】世界类检测 ----
+  fastbreak:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 3.0
+    # 1 秒内可破坏的「硬度权重总量」上限
+    # 硬度权重: 黑曜石/远古残骸=12, 深板岩=4.5, 石头/矿物=2, 泥土=0.6
+    # 已自动按效率附魔等级与急迫药水放宽
+    max-weight-per-second: 9.0
+  inventory:
+    enabled: true
+    kick-vl: 0
+    ban-vl: 0
+    min-consecutive: 2
+    alert-threshold: 3.0
+    # 每秒背包/使用操作次数上限（枪械服换弹/切枪频繁，阈值设得宽松）
+    max-ops-per-second: 25
