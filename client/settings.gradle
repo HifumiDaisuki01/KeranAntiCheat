@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        // Fabric 官方仓库(loom 插件本体)
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        // 阿里云镜像(代理 central, 含 asm/cadixdev 等 loom 依赖)
+        maven {
+            name = 'Aliyun'
+            url = 'https://maven.aliyun.com/repository/public'
+        }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = 'KeranClient'

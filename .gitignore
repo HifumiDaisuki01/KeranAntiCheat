@@ -1,0 +1,33 @@
+# 构建产物
+target/
+build/
+out/
+.gradle/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+logs/
+
+# Minecraft 服务端运行文件
+world/
+world_nether/
+world_the_end/
+server.properties
+eula.txt
+banned-*.json
+ops.json
+usercache.json
+whitelist.json

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "keranclient",
+  "version": "${version}",
+  "name": "Keran Client",
+  "description": "反作弊防注入客户端检测 Mod (配合 KeranAntiCheat 服务端插件)\n© Keran Technology | 官网 tech.keran.cc | 问题反馈 FAQ@keran.cc",
+  "authors": [
+    "Keran Technology"
+  ],
+  "contact": {
+    "homepage": "https://tech.keran.cc",
+    "email": "FAQ@keran.cc",
+    "sources": "https://tech.keran.cc"
+  },
+  "license": "All Rights Reserved",
+  "icon": "assets/keranclient/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.keran.client.KeranClientMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.14.21",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
