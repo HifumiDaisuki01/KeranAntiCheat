@@ -1,193 +1,126 @@
 # Keran AntiCheat
 
-当前维护：服务端 **3.2.0** / 客户端 **2.1.0**。这是通用反作弊基础维护版本。参见 [更新记录](CHANGELOG-3.2.0.md) 与 [安装、严格模式和通用 API](docs/升级说明-3.2.0.md)。下方旧引擎算法说明保留作历史参考，实际限制以新版更新记录为准。
+Minecraft 通用反作弊维护项目：**服务端插件 + 可选客户端模组**。当前维护 Paper / Fabric **1.20.1**，服务端 **3.2.0**，客户端 **2.1.0**。
 
-> © Keran Technology Co., Ltd. | 官网 [tech.keran.cc](https://tech.keran.cc) | 问题反馈 FAQ@keran.cc
+© Keran Technology Co., Ltd. · [tech.keran.cc](https://tech.keran.cc) · 问题反馈：FAQ@keran.cc
 
-Minecraft 服务器反作弊体系。**服务端插件 + 客户端模组**双端配合，覆盖移动、战斗、世界三大类共 **28 项检测**。
+## 下载
 
-> **📌 当前仅维护 Minecraft 1.20.1 版本**（本分支）。
-> 1.16.5 版本**已停止维护**，详见下方[版本说明](#版本说明)。
+[最新 Release：v3.2.0](https://github.com/HifumiDaisuki01/KeranAntiCheat/releases/tag/v3.2.0)
 
----
+| 文件 | 用途 |
+|---|---|
+| [KeranAntiCheat-3.2.0.jar](https://github.com/HifumiDaisuki01/KeranAntiCheat/releases/download/v3.2.0/KeranAntiCheat-3.2.0.jar) | Paper 服务端插件 |
+| [KeranClient-2.1.0.jar](https://github.com/HifumiDaisuki01/KeranAntiCheat/releases/download/v3.2.0/KeranClient-2.1.0.jar) | Fabric 客户端模组 |
+| [config.yml](https://github.com/HifumiDaisuki01/KeranAntiCheat/releases/download/v3.2.0/config.yml) | 新版默认配置参考 |
 
-## 版本说明
+升级已有服务器时保留原配置，由插件迁移新增设置；不要直接用默认配置覆盖自定义设置。
 
-本仓库同时维护两个 Minecraft 版本，**共用同一仓库**，通过分支与 Release 区分：
+## 环境与安装
 
-| MC 版本 | 分支 | Release 标签 | 服务端插件 | 客户端模组 | 维护状态 |
-|---|---|---|---|---|---|
-| **1.20.1** | `main` | `v2` / `v3.1.0` | KeranAntiCheat 3.2.0 | KeranClient 2.1.0 | ✅ **持续更新中** |
-| 1.16.5 | `1.16.5` | `v1-release1` | KeranAntiCheat 2.0.0 | KeranClient 1.1.0 | ⛔ **已停止维护** |
+- 服务端：Paper 1.20.1，Java 17。
+- 客户端：Minecraft 1.20.1，Fabric Loader ≥ 0.14.21，Fabric API，Java 17。
 
-> ### ⚠️ 关于 1.16.5 版本
->
-> **1.16.5 版本已停止维护（EOL）**，不再接收任何功能更新、检测条目扩充或误报修复。
->
-> 当前**仅有 1.20.1 版本持续更新**。1.16.5 的源码与成品仍保留在此仓库中供下载，但：
-> - 其检测引擎为老模型，**误报率较高**（详见下文对比）
-> - 不会补入 3.1.0 的证据累积引擎与新增的 9 项检测
-> - 遇到问题不再提供修复
->
-> **建议所有用户迁移到 1.20.1。**
+停服并备份 `plugins/KeranAntiCheat/`，移除旧服务端 JAR，将新版放入 `plugins/`，再启动服务器。
+使用客户端模组的玩家应移除旧版 KeranClient，将 **2.1.0** 和 Fabric API 放入 `mods/`。严格模式不接受旧版 KeranClient 2.0.0。
 
-### 下载成品
+## 严格模式：是否必须安装客户端
 
-前往 [Releases](../../releases) 页面直接下载对应版本的 jar 包：
+在 `plugins/KeranAntiCheat/config.yml` 中设置：
 
-- **v2** — Minecraft 1.20.1（Paper 服务端 + Fabric 客户端）
-- **v1-release1** — Minecraft 1.16.5（Spigot 服务端 + Fabric 客户端）
-
----
-
-## 当前主线：1.20.1 (v2)
-
-### 环境要求
-
-**服务端**
-- Paper 1.20.1
-- Java 17+
-
-**客户端**
-- Fabric Loader ≥ 0.14.21
-- Fabric API（必需）
-- Minecraft 1.20.1
-- Java 17+
-
-### 目录结构（main 分支）
-
-```
-server/                 服务端插件
-  ├── src/              源码
-  ├── pom.xml           Maven 构建配置
-  └── KeranAntiCheat-3.2.0.jar
-client/                 客户端模组
-  ├── src/              源码
-  ├── build.gradle      Fabric Loom 构建配置
-  └── KeranClient-2.1.0.jar
-docs/
-  ├── config.yml        服务端配置模板
-  └── 使用文档-1.20.1.md
+```yaml
+client:
+  strict-mode: true
+join:
+  wait-seconds: 20
+heartbeat:
+  enabled: true
+  timeout-seconds: 90
 ```
 
-### 检测条目（28 项）
+| 设置 | 行为 |
+|---|---|
+| `strict-mode: true` | 必须提交本次连接的有效客户端报告；等待期间限制游戏动作，超时断开；启用心跳检查时，心跳超时也会断开 |
+| `strict-mode: false` | 允许未安装客户端的玩家；移动、近战等服务端检测继续工作；已安装客户端仍可上报和供管理员查询 |
+
+新安装默认开启。修改后执行 `/kac reload`。从关闭切到开启时，尚未上报的在线玩家获得新的等待期。
+
+旧配置首次升级时从 `join.enabled && join.kick-if-no-client` 迁移；之后 **`client.strict-mode` 为准**。`kac.bypass` / 旧版 `kacc.bypass` 可以豁免客户端准入，管理员身份本身不会豁免。
+
+`strict-md5.enabled` 是独立的文件摘要校验开关，不用于代替上述准入开关。客户端 JAR 或文件路径规则变化后，旧 MD5 基线需要重新登记。
+
+## 3.2.0 更新重点
+
+- 使用会话 challenge/nonce、版本、玩家名和指纹自洽校验；注册频道不再等于安装验证通过。
+- 近战伤害关联 Paper 的同 tick、同目标攻击请求，避免把仅归因玩家的插件伤害算作原版近战。
+- Reach 使用眼睛到实际碰撞箱最近点；Hitbox 使用正向射线，修复正后方几何盲区。
+- 拆分检测器状态，修复目标切换、击退容忍、背包统计、聊天线程隔离及挖掘权重。
+- 违规记录保留离线历史，使用主线程快照与后台串行原子写入；重连恢复记录并按离线时间衰减。
+- 客户端移除进服主线程等待，后台扫描、游戏线程发送，隔离重连会话；管理员查询按请求 ID 匹配。
+- 修复客户端 `fabric.mod.json` 打包，增加 Gradle wrapper、双端 CI 与回归测试。
+- 提供通用 `BehaviorContext` 适配接口，不绑定特定枪械插件。
+
+完整内容见 [更新记录](CHANGELOG-3.2.0.md)、[升级与 API 说明](docs/升级说明-3.2.0.md)、[验证记录](docs/验证记录-3.2.0.md)。
+
+## 检测器与处罚
+
+目前保留 28 项检测器：
 
 | 分类 | 检测器 |
 |---|---|
-| **移动 (11)** | Fly / Speed / Timer / NoFall / Jesus / Spider / Blink / Elytra / NoSlow / Step / GroundSpoof |
-| **战斗 (10)** | KillAura / Aim / Reach / Criticals / AutoClicker / Velocity / AntiKb / Hitbox / Backtrack / AutoBlock |
-| **世界 (7)** | XRay / Nuker / Scaffold / FastUse / FastBreak / Chat / Inventory |
+| 移动（11） | Fly / Speed / Timer / NoFall / Jesus / Spider / Blink / Elytra / NoSlow / Step / GroundSpoof |
+| 战斗（10） | KillAura / Aim / Reach / Criticals / AutoClicker / Velocity / AntiKb / Hitbox / Backtrack / AutoBlock |
+| 世界与交互（7） | XRay / Nuker / Scaffold / FastUse / FastBreak / Chat / Inventory |
 
-### v3.0 引擎：证据累积模型
+大部分检测采用异常观测、证据累积、加权 VL 和时间衰减。检测器数量不代表已验证的检出率。
 
-v2.0 老引擎误报严重的根因是**五重缺陷叠加**，v3.0 逐一修复：
+- `checks.<id>.enabled`：启用或关闭检测。
+- `checks.<id>.observe-only: true`：保留告警和统计，禁止该检测自动踢出与封禁。
+- `kick-vl` / `ban-vl`：0 继承全局阈值，-1 关闭对应处罚。
+- `punishments.auto-ban-hours`：自动封禁默认 24 小时，0 表示永久。
 
-| 老引擎缺陷 | 后果 | v3.0 方案 |
-|---|---|---|
-| 超阈值一次即计违规 | 网络抖动直接触发 | **连续帧验证** `min-consecutive` |
-| 无置信度概念 | 一次异常 = 十次异常 | **证据累积** `alert-threshold` |
-| 违规值只增不减 | 误报永久累积致误封 | **VL 时间衰减** `vl-decay-per-10s` |
-| 无延迟补偿 | 高 Ping 玩家被误判 | **延迟补偿** `lag-compensation-ratio` |
-| 豁免矩阵残缺 | 特殊场景必误报 | 补齐 1.20.1 全部机制豁免 |
+Aim、AutoClicker、XRay、Backtrack 默认观察。新环境应先收集正常玩法样本，再决定处罚策略。
 
-**调参原则**：检测误报时，**优先调大 `min-consecutive` 与 `alert-threshold`，而不是直接关闭检测**。
+## 管理命令
 
-### 核心算法改进
-
-- **自瞄检测**：从"比对 tick 旋转角度"改为 **GCD 灵敏度网格分析 + 旋转平滑度分析**
-- **连点器检测**：从"数 CPS"改为 **点击间隔变异系数分析**（人类 CV > 0.15，连点器 < 0.045）
-- **距离检测**：延迟 + 目标移动 + 武器附加射程三重补偿
-- **透视检测**：新增"未经石层直取珍贵矿物"强特征
-
-完整说明见 `docs/使用文档-1.20.1.md`。
-
----
-
-## 旧版：1.16.5 (v1-release1) — ⛔ 已停止维护
-
-> **本版本已 EOL，不再接收任何更新。** 源码保留在 [`1.16.5`](../../tree/1.16.5) 分支，仅供历史查阅与下载。
-
-| 组件 | 版本 | 环境 |
-|---|---|---|
-| KeranAntiCheat | 2.0.0 | Spigot 1.16.5 / Java 8+ |
-| KeranClient | 1.1.0 | Fabric 1.16.5 / Java 8+ |
-
-包含 **19 项检测**，为最初的整合版本。
-
-**为什么建议升级到 1.20.1？**
-
-| 对比项 | 1.16.5 (2.0.0) | 1.20.1 (3.1.0) |
-|---|---|---|
-| 检测条目 | 19 项 | **28 项** |
-| 检测引擎 | 单次超限即罚 | **证据累积模型** |
-| 连续帧验证 | ❌ | ✅ |
-| 违规值衰减 | ❌ | ✅ |
-| 延迟补偿 | ❌ | ✅ |
-| 误报水平 | 高 | **显著降低** |
-| 维护状态 | ⛔ 停止维护 | ✅ 持续更新 |
-
----
-
-## 安装
-
-### 服务端
-1. 将 `KeranAntiCheat-*.jar` 放入服务端 `plugins/` 目录
-2. 启动服务器，插件自动生成 `plugins/KeranAntiCheat/config.yml`
-3. 按需修改配置后执行 `/kac reload` 热重载
-
-### 客户端
-1. 安装对应版本的 Fabric Loader
-2. 将 `KeranClient-*.jar` 与 **Fabric API** 一同放入 `mods/` 目录
-3. 启动游戏，进服后自动上报指纹
-
-> 服务端 `client.strict-mode` 可选择强制安装或允许原版玩家；详细行为见升级说明。
-
----
-
-## 命令
-
-```
-/kac help                      帮助
-/kac checks                    查看检测器状态
-/kac toggle <检测器> [on|off]  运行时开关检测器
-/kac stats                     全局违规统计
-/kac info <玩家>               查看违规记录
-/kac cinfo <玩家>              查看客户端指纹
-/kac detail <玩家>             客户端详细 mods/材质包清单
-/kac modsmd5 <玩家>            客户端 mods 目录 MD5
-/kac packsmd5 <玩家>           客户端材质包目录 MD5
-/kac list                      已上报客户端玩家列表
-/kac reset <玩家>              清零违规记录
-/kac ban <玩家> [小时] [原因]  封禁（0 小时 = 永久）
-/kac unban <玩家>              解封
-/kac kick <玩家> [原因]        踢出
-/kac alerts [on|off]           切换告警接收
-/kac verbose [on|off]          详细日志
-/kac reload                    重载配置
-```
-
-### 权限
-
-| 权限 | 说明 |
+| 命令 | 用途 |
 |---|---|
-| `kac.admin` | 管理权限（全部命令） |
-| `kac.notify` | 接收告警 |
-| `kac.bypass` | 豁免全部检测 |
-| `kac.bypass.<检测器>` | 豁免单个检测器 |
+| `/kac help` | 查看完整命令 |
+| `/kac reload` | 重载配置 |
+| `/kac checks`、`/kac toggle <检测器> [on\|off]` | 查看、切换检测器 |
+| `/kac info <玩家>`、`/kac stats` | 查看违规记录与统计 |
+| `/kac cinfo <玩家>`、`/kac list` | 查看客户端报告概况 |
+| `/kac detail <玩家>` | 请求客户端后台扫描详细清单 |
+| `/kac modsmd5 <玩家>`、`/kac packsmd5 <玩家>` | 请求文件摘要清单 |
+| `/kac reset <玩家>` | 清零 VL |
+| `/kac ban <玩家> [小时] [原因]`、`/kac unban <玩家>` | 管理封禁 |
+| `/kac kick <玩家> [原因]` | 踢出玩家 |
+| `/kac alerts [on\|off]`、`/kac verbose [on\|off]` | 管理提示与日志 |
 
----
+权限：`kac.admin` 管理，`kac.notify` 告警，`kac.bypass` 全局豁免，`kac.bypass.<检测器>` 单项豁免。
 
-## 声明
+## 构建与目录
 
-- 本仓库为**公开发布仓库**，供服务器服主下载成品使用
-- 版权归 Keran Technology Co., Ltd. 所有
-- 问题反馈：FAQ@keran.cc
+```text
+server/       服务端源码、Maven 配置、回归测试和成品
+client/       客户端源码、Gradle wrapper 和成品
+docs/         默认配置、升级说明、验证记录
+.github/      双端构建工作流
+```
 
-*Powered by Keran Technology © 2026*
+服务端：`mvn -f server/pom.xml verify`。
+客户端：`cd client`，Linux/macOS 执行 `./gradlew build`，Windows 执行 `gradlew.bat build`。
 
+## 验证与能力边界
 
----
+服务端及客户端构建通过，12 项回归测试通过；真实 Paper 1.20.1 build 196 上六种准入情况及管理员查询回复匹配通过。GitHub Actions 双端构建也通过。
 
-## v3.1.0 更新
+本版是基础维护批次，尚未实现完整原始数据包采集、历史碰撞箱回溯或移动预测。客户端上报是辅助信息，不能证明玩家环境未被修改；完整伪造客户端报告仍属于威胁。
 
-本版为独立代码审计后的结构性修复批次，修复 8 项问题（KAC-01 ~ KAC-10），重点解决两类缺陷：一是检测器在结构上无法触发，二是处罚链路形同虚设。详见 [CHANGELOG-3.1.0.md](CHANGELOG-3.1.0.md)。
+尚未完成图形 Fabric 客户端、真实作弊及完整生产插件组合的实测。自定义近战请求内的特殊伤害、冲刺和重力等玩法，可通过通用 API 登记有限时长和范围的规则。
+
+## 历史版本
+
+1.16.5 已停止维护，源码保留在 [`1.16.5` 分支](https://github.com/HifumiDaisuki01/KeranAntiCheat/tree/1.16.5)，历史成品见 [v1-release1](https://github.com/HifumiDaisuki01/KeranAntiCheat/releases/tag/v1-release1)。
+
+Powered by Keran Technology © 2026
