@@ -32,6 +32,9 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
     public static final String QUERY_CHANNEL = "kac:query";
 
     private final KeranAntiCheat plugin;
+    private final Map<UUID, String> sessions = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> messageWindows = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> messageCounts = new ConcurrentHashMap<>();
 
     private final Map<UUID, ClientData> clientData = new ConcurrentHashMap<>();
     /** 查询等待表: 玩家UUID -> 查询上下文(请求者 + 请求类型) */
@@ -41,6 +44,7 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
     public static class PendingQuery {
         public final CommandSender requester;
         public final String type; // detail / modsmd5 / packsmd5
+        public final String requestId = UUID.randomUUID().toString();
 
         public PendingQuery(CommandSender requester, String type) {
             this.requester = requester;
@@ -55,6 +59,7 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
     /** 由主插件 onEnable 调用 */
     public void init() {
         mergeMissingConfig();
+        for (Player p : Bukkit.getOnlinePlayers()) scheduleJoinCheck(p);
 
         // 注册插件消息频道(收/发)
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, REPORT_CHANNEL, this);
@@ -83,7 +88,9 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin);
         clientData.clear();
         pendingQueries.clear();
-        channelRegistered.clear();
+        sessions.clear();
+        messageWindows.clear();
+        messageCounts.clear();
         joinTimes.clear();
     }
 
@@ -92,9 +99,15 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         if (player == null || !player.isOnline()) {
             return;
         }
-        String json = decodeStringPayload(message);
-        if (json == null || json.isEmpty()) {
-            plugin.getLogger().warning("收到空上报数据来自 " + player.getName());
+        UUID id = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        if (now - messageWindows.getOrDefault(id, 0L) >= 1000) {
+            messageWindows.put(id, now); messageCounts.put(id, 0);
+        }
+        if (message == null || message.length > 32767 || messageCounts.merge(id, 1, Integer::sum) > 8) return;
+        String json = MessageCodec.decode(message);
+        if (json == null || json.isEmpty() || !MessageCodec.reasonableDepth(json)) {
+            if (messageCounts.getOrDefault(id, 0) == 1) plugin.getLogger().warning("拒绝非法客户端帧: " + player.getName());
             return;
         }
         JsonObject obj;
@@ -102,10 +115,12 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
             // 兼容服务器内置旧版 Gson(2.8.0 无 parseString)
             obj = new JsonParser().parse(json).getAsJsonObject();
         } catch (Exception e) {
-            plugin.getLogger().warning("收到非法上报数据来自 " + player.getName() + ": " + e.getMessage());
+            if (messageCounts.getOrDefault(id, 0) == 1) plugin.getLogger().warning("拒绝非法客户端JSON: " + player.getName());
             return;
         }
 
+        try {
+        validateEnvelope(player, obj);
         switch (channel) {
             case REPORT_CHANNEL:
                 handleReport(player, obj);
@@ -121,6 +136,28 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
                 break;
             default:
                 break;
+        }
+        } catch (RuntimeException error) {
+            // At most one parse/validation error per player per second.
+            if (messageCounts.getOrDefault(id, 0) == 1)
+                plugin.getLogger().warning("拒绝 " + player.getName() + " 的客户端消息: " + error.getMessage());
+        }
+    }
+
+    private void validateEnvelope(Player player, JsonObject obj) {
+        if (!player.getName().equalsIgnoreCase(safe(obj, "player"))
+                || !"2.1.0".equals(safe(obj, "v"))
+                || !java.util.Objects.equals(sessions.get(player.getUniqueId()), safe(obj, "nonce")))
+            throw new IllegalArgumentException("客户端版本或会话不匹配，请升级 KeranClient 2.1.0");
+        if (!obj.has("ts") || !obj.get("ts").isJsonPrimitive()) throw new IllegalArgumentException("缺少时间戳");
+        long ts = obj.get("ts").getAsLong();
+        long now = System.currentTimeMillis();
+        if (ts < now - 600000 || ts > now + 600000) throw new IllegalArgumentException("时间戳超出窗口");
+        for (Map.Entry<String, com.google.gson.JsonElement> field : obj.entrySet()) {
+            if (field.getValue().isJsonArray()) {
+                if (field.getValue().getAsJsonArray().size() > 512) throw new IllegalArgumentException("数组过大");
+            } else if (field.getValue().isJsonPrimitive() && field.getValue().getAsString().length() > 1024)
+                throw new IllegalArgumentException("字段过长");
         }
     }
 
@@ -182,6 +219,14 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
                 return "mods[" + i + "] 缺少 id";
             }
         }
+
+        boolean hasClient = false;
+        for (com.google.gson.JsonElement element : mods) {
+            JsonObject m = element.getAsJsonObject();
+            if ("keranclient".equals(safe(m, "id"))) hasClient = true;
+            if (!m.has("version") || !m.get("version").isJsonPrimitive()) return "缺少 mod version";
+        }
+        if (!hasClient) return "报告缺少 keranclient";
 
         // 4. fingerprint 必须为 64 位十六进制
         if (!obj.has("fingerprint") || !obj.get("fingerprint").isJsonPrimitive()) {
@@ -269,15 +314,24 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         data.invalidReports = 0;
 
         data.name = player.getName();
-        data.lastReport = System.currentTimeMillis();
-        data.lastHeartbeat = System.currentTimeMillis();
+        data.lastReport = 0;
         data.fingerprint = obj.has("fingerprint") ? obj.get("fingerprint").getAsString() : "";
         data.modCount = obj.has("mods") ? obj.getAsJsonArray("mods").size() : 0;
         data.blacklistHits = toStringList(obj, "blacklist_hits");
+        // Apply server-maintained policy as well as client hints.
+        for (String blocked : plugin.getConfigManager().get().getStringList("blacklist.mod-ids")) {
+            for (com.google.gson.JsonElement mod : obj.getAsJsonArray("mods")) {
+                if (blocked.equalsIgnoreCase(safe(mod.getAsJsonObject(), "id")) && !data.blacklistHits.contains(blocked))
+                    data.blacklistHits.add(blocked);
+            }
+        }
         data.blacklistSources = toStringList(obj, "blacklist_sources");
         data.suspicious = toStringList(obj, "suspicious");
         data.jvmAgents = toStringList(obj, "jvm_agents");
         data.suspiciousPacks = toStringList(obj, "suspicious_packs");
+
+        data.modFileCount = obj.has("mod_file_count") ? Math.max(0, Math.min(512, obj.get("mod_file_count").getAsInt())) : 0;
+        data.packFileCount = obj.has("pack_file_count") ? Math.max(0, Math.min(512, obj.get("pack_file_count").getAsInt())) : 0;
 
         // 全量文件清单(连入自动上报): mod_files / pack_files / 目录 MD5
         if (obj.has("mod_files") && obj.get("mod_files").isJsonArray()) {
@@ -383,13 +437,18 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
             broadcastAlert(getMsg("suspicious-pack",
                     "§e[KAC] §e%player% §7启用可疑资源包: §f%details%", ph));
         }
+        data.lastReport = System.currentTimeMillis();
+        data.lastHeartbeat = data.lastReport;
+        data.heartbeatTimeoutWarned = 0;
     }
 
     /** 处理心跳 */
     private void handleHeartbeat(Player player, JsonObject obj) {
         ClientData data = clientData.computeIfAbsent(player.getUniqueId(), k -> new ClientData(player.getName()));
         data.name = player.getName();
+        if (!data.hasReported()) return;
         data.lastHeartbeat = System.currentTimeMillis();
+        data.heartbeatTimeoutWarned = 0;
     }
 
     /** 处理详细清单回复 */
@@ -401,8 +460,9 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         plugin.getLogger().info("[" + player.getName() + "] 收到详细清单: mods=" + count(obj, "mods")
                 + " mod文件=" + count(obj, "mod_files") + " 材质包文件=" + count(obj, "pack_files"));
 
-        PendingQuery q = pendingQueries.remove(player.getUniqueId());
-        if (q != null) {
+        PendingQuery q = pendingQueries.get(player.getUniqueId());
+        if (q != null && "detail".equals(q.type) && q.requestId.equals(safe(obj, "request_id"))
+                && pendingQueries.remove(player.getUniqueId(), q)) {
             sendDetailTo(q.requester, player, data);
         }
     }
@@ -416,8 +476,9 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         plugin.getLogger().info("[" + player.getName() + "] 收到 MD5 清单: mod文件=" + count(obj, "mod_files")
                 + " 材质包文件=" + count(obj, "pack_files"));
 
-        PendingQuery q = pendingQueries.remove(player.getUniqueId());
-        if (q != null) {
+        PendingQuery q = pendingQueries.get(player.getUniqueId());
+        if (q != null && !"detail".equals(q.type) && q.requestId.equals(safe(obj, "request_id"))
+                && pendingQueries.remove(player.getUniqueId(), q)) {
             if ("packsmd5".equals(q.type)) {
                 sendPackMd5To(q.requester, player, data);
             } else {
@@ -428,74 +489,74 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
 
     // ---------- 强制门槛 ----------
 
-    /** 已登记频道注册的玩家(客户端注册了 kac: 频道 = 已装 mod) */
-    private final java.util.Set<UUID> channelRegistered = ConcurrentHashMap.newKeySet();
-    /** 玩家进服时刻(用于强制门槛超时计算) */
     private final Map<UUID, Long> joinTimes = new ConcurrentHashMap<>();
 
-    /**
-     * 玩家进服: 立即开始重复检查, 未上报指纹/未注册频道则踢出。
-     * 重复检查直到玩家上报或超时, 避免单次调度丢失。
-     */
-    public void scheduleJoinCheck(Player player) {
-        if (!plugin.getConfigManager().get().getBoolean("join.enabled", true)) {
-            return;
-        }
-        if (player.hasPermission("kacc.bypass")) {
-            return;
-        }
-        int wait = Math.max(2, plugin.getConfigManager().get().getInt("join.wait-seconds", 5));
-        UUID uuid = player.getUniqueId();
-        joinTimes.put(uuid, System.currentTimeMillis());
-        plugin.getServer().getScheduler().runTaskTimer(plugin, task -> {
-            if (!player.isOnline()) {
-                task.cancel();
-                return;
-            }
-            ClientData d = clientData.get(uuid);
-            boolean reported = d != null && d.hasReported();
-            boolean hasChannel = channelRegistered.contains(uuid);
-            if (reported || hasChannel) {
-                task.cancel();
-                return;
-            }
-            // 进服超过 wait 秒仍未上报 → 踢
-            Long joinMs = joinTimes.get(uuid);
-            if (joinMs != null && System.currentTimeMillis() - joinMs >= wait * 1000L) {
-                task.cancel();
-                joinTimes.remove(uuid);
-                boolean kick = plugin.getConfigManager().get().getBoolean("join.kick-if-no-client", true);
-                if (kick) {
-                    String msg = ChatColor.translateAlternateColorCodes('&',
-                            plugin.getConfigManager().get().getString("join.kick-message",
-                                    "§c[KAC] §f本服务器要求安装 KeranClient 反作弊客户端"));
-                    player.kickPlayer(msg);
-                    plugin.getLogger().warning("玩家 " + player.getName() + " 未安装 KeranClient, 已踢出(强制安装)");
-                } else if (plugin.getConfigManager().get().getBoolean("join.alert", true)) {
-                    broadcastAlert(getMsg("join-no-client",
-                            "§e[KAC] §e%player% §7未安装 KeranClient 客户端", player.getName()));
-                }
-            }
-        }, 10L, 20L); // 0.5 秒后开始, 每 1 秒检查一次
+    public boolean canPlay(Player player) {
+        ClientData data = clientData.get(player.getUniqueId());
+        return ClientPolicy.canPlay(plugin.getConfigManager().isStrictClientMode(), bypassClient(player),
+                data != null && data.hasReported());
     }
 
-    /** 监听客户端频道注册: 客户端注册 kac:report = 已装 KeranClient mod */
+    private boolean bypassClient(Player p) {
+        return p.hasPermission("kac.bypass") || p.hasPermission("kacc.bypass");
+    }
+
+    public void scheduleJoinCheck(Player player) {
+        UUID uuid = player.getUniqueId();
+        sessions.put(uuid, UUID.randomUUID().toString());
+        clientData.remove(uuid);
+        joinTimes.put(uuid, System.currentTimeMillis());
+    }
+
+    /** Called by /kac reload: only the current strict-mode setting controls admission. */
+    public void reloadPolicy() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            ClientData d = clientData.get(p.getUniqueId());
+            if (d == null || !d.hasReported()) joinTimes.put(p.getUniqueId(), System.currentTimeMillis());
+        }
+    }
+
     @EventHandler(priority = org.bukkit.event.EventPriority.MONITOR)
     public void onChannelRegister(org.bukkit.event.player.PlayerRegisterChannelEvent e) {
-        String channel = e.getChannel();
-        if (channel != null && channel.startsWith("kac:")) {
-            channelRegistered.add(e.getPlayer().getUniqueId());
-            plugin.getLogger().info("[" + e.getPlayer().getName() + "] 客户端已注册频道 " + channel + " (识别为已安装 KeranClient)");
+        if (e.getChannel().equals(QUERY_CHANNEL))
+            Bukkit.getScheduler().runTask(plugin, () -> sendChallenge(e.getPlayer()));
+    }
+
+    private void sendChallenge(Player p) {
+        String nonce = sessions.get(p.getUniqueId());
+        if (nonce != null && p.isOnline() && p.getListeningPluginChannels().contains(QUERY_CHANNEL))
+            sendString(p, "challenge:" + nonce);
+    }
+
+    private void checkAdmissions() {
+        long now = System.currentTimeMillis();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            UUID id = p.getUniqueId();
+            ClientData d = clientData.get(id);
+            if (d != null && d.hasReported()) { joinTimes.remove(id); continue; }
+            if (!sessions.containsKey(id)) scheduleJoinCheck(p);
+            Long start = joinTimes.get(id);
+            if (start == null) continue;
+            sendChallenge(p);
+            if (now - start >= plugin.getConfigManager().getClientWaitSeconds() * 1000L) {
+                if (plugin.getConfigManager().isStrictClientMode() && !bypassClient(p)) {
+                    p.kickPlayer(ChatColor.translateAlternateColorCodes('&', plugin.getConfigManager().get().getString(
+                            "join.kick-message", "§c[KAC] 请安装 KeranClient 2.1.0 后重新加入")));
+                }
+                joinTimes.remove(id);
+            }
         }
     }
 
-    /** 玩家离开时清理登记 */
     @EventHandler
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent e) {
-        channelRegistered.remove(e.getPlayer().getUniqueId());
-        joinTimes.remove(e.getPlayer().getUniqueId());
-        pendingQueries.remove(e.getPlayer().getUniqueId());
-        clientData.remove(e.getPlayer().getUniqueId());
+        UUID id = e.getPlayer().getUniqueId();
+        sessions.remove(id); joinTimes.remove(id); pendingQueries.remove(id); clientData.remove(id);
+        messageWindows.remove(id); messageCounts.remove(id);
+    }
+
+    private void sendString(Player target, String text) {
+        target.sendPluginMessage(plugin, QUERY_CHANNEL, MessageCodec.encode(text));
     }
 
     // ---------- 管理员查询 ----------
@@ -524,13 +585,14 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
             return false;
         }
         // 负载: 命令类型字符串(客户端 QueryReceiver 读取)
-        byte[] msg = type.getBytes(StandardCharsets.UTF_8);
-        target.sendPluginMessage(plugin, QUERY_CHANNEL, msg);
-        pendingQueries.put(target.getUniqueId(), new PendingQuery(requester, type));
+        if (pendingQueries.containsKey(target.getUniqueId())) return false;
+        PendingQuery query = new PendingQuery(requester, type);
+        pendingQueries.put(target.getUniqueId(), query);
+        sendString(target, type + ":" + query.requestId);
         // 8 秒超时清理
         UUID targetId = target.getUniqueId();
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (pendingQueries.remove(targetId) != null) {
+            if (pendingQueries.remove(targetId, query)) {
                 requester.sendMessage(ChatColor.translateAlternateColorCodes('&',
                         "§8[§cKACClient§8] §e" + target.getName() + " §7未回复查询(可能客户端掉线)"));
             }
@@ -625,6 +687,7 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
     // ---------- 心跳检查 ----------
 
     private void checkHeartbeats() {
+        checkAdmissions();
         if (!plugin.getConfigManager().get().getBoolean("heartbeat.enabled", true)) {
             return;
         }
@@ -636,10 +699,14 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
             if (p == null || !p.isOnline()) {
                 continue;
             }
-            if (p.hasPermission("kac.bypass")) {
+            if (bypassClient(p)) {
                 continue;
             }
-            if (d.lastReport > 0 && d.lastHeartbeat > 0 && now - d.lastHeartbeat > timeout) {
+            if (d.lastReport > 0 && d.lastHeartbeat > 0 && now - d.lastHeartbeat > Math.max(10000, timeout)) {
+                if (plugin.getConfigManager().isStrictClientMode()) {
+                    p.kickPlayer("§c[KAC] 客户端心跳超时，请检查连接后重新加入");
+                    continue;
+                }
                 d.heartbeatTimeoutWarned++;
                 if (d.heartbeatTimeoutWarned <= 3 && plugin.getConfigManager().get().getBoolean("heartbeat.alert", true)) {
                     java.util.Map<String, String> ph = new java.util.HashMap<>();
@@ -674,36 +741,6 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f KB", bytes / 1024.0);
         return String.format(java.util.Locale.ROOT, "%.2f MB", bytes / 1048576.0);
-    }
-
-    /** 解析 VarInt 前缀字符串 (兼容 CraftBukkit 传递的原始 payload) */
-    private String decodeStringPayload(byte[] data) {
-        if (data == null || data.length == 0) {
-            return null;
-        }
-        try {
-            int pos = 0;
-            int length = 0;
-            int shift = 0;
-            while (pos < data.length) {
-                byte b = data[pos++];
-                length |= (b & 0x7F) << shift;
-                if ((b & 0x80) == 0) {
-                    break;
-                }
-                shift += 7;
-                if (shift > 35) {
-                    return null;
-                }
-            }
-            if (pos + length > data.length) {
-                // 容错: 有些平台直接传原始 UTF-8
-                return new String(data, StandardCharsets.UTF_8);
-            }
-            return new String(data, pos, length, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private java.util.List<String> toStringList(JsonObject obj, String key) {

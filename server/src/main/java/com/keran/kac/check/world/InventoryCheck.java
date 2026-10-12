@@ -30,17 +30,9 @@ public class InventoryCheck extends Check {
     }
 
     @Override
-    public void onInteract(PlayerInteractEvent e, PlayerData data) {
-        Player p = e.getPlayer();
-        if (p.getGameMode().name().equals("CREATIVE")) {
-            return;
-        }
-        Action a = e.getAction();
-        // 只统计右键（使用物品/开容器）
-        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) {
-            return;
-        }
-
+    public void onInventory(org.bukkit.event.inventory.InventoryClickEvent e, PlayerData data) {
+        Player p = (Player) e.getWhoClicked();
+        if (p.getGameMode() == org.bukkit.GameMode.CREATIVE) return;
         long now = System.currentTimeMillis();
         if (data.inventoryWindowStart == 0) {
             data.inventoryWindowStart = now;
@@ -68,6 +60,6 @@ public class InventoryCheck extends Check {
 
     @Override
     public long eventMask() {
-        return EV_INTERACT;
+        return EV_INVENTORY;
     }
 }

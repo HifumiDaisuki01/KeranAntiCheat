@@ -57,7 +57,8 @@ public class ACListener implements Listener {
             }
             try {
                 action.run(c);
-            } catch (Throwable ignored) {
+            } catch (Exception error) {
+                plugin.getCheckManager().reportError(c, error);
             }
         }
     }
@@ -95,11 +96,41 @@ public class ACListener implements Listener {
         plugin.getCheckManager().removePlayer(e.getPlayer());
     }
 
+    // Strict admission has a grace period for scanning, but does not allow gameplay before verification.
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gateMove(PlayerMoveEvent e) {
+        if (!plugin.getClientBridge().canPlay(e.getPlayer()) && e.getTo() != null
+                && (e.getFrom().getX() != e.getTo().getX() || e.getFrom().getY() != e.getTo().getY()
+                    || e.getFrom().getZ() != e.getTo().getZ())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gateDamage(EntityDamageEvent e) {
+        if (e.getEntity() instanceof Player p && !plugin.getClientBridge().canPlay(p)) e.setCancelled(true);
+        if (e instanceof EntityDamageByEntityEvent hit && hit.getDamager() instanceof Player p
+                && !plugin.getClientBridge().canPlay(p)) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gateInteract(PlayerInteractEvent e) {
+        if (!plugin.getClientBridge().canPlay(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gateBreak(BlockBreakEvent e) {
+        if (!plugin.getClientBridge().canPlay(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gatePlace(BlockPlaceEvent e) {
+        if (!plugin.getClientBridge().canPlay(e.getPlayer())) e.setCancelled(true);
+    }
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void gateInventory(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (e.getWhoClicked() instanceof Player p && !plugin.getClientBridge().canPlay(p)) e.setCancelled(true);
+    }
+
     // ---------- 移动 ----------
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onMove(PlayerMoveEvent e) {
-        if (e.getFrom().equals(e.getTo())) {
+        if (e.getTo() == null || e.getFrom().equals(e.getTo())) {
             return;
         }
         Player p = e.getPlayer();
@@ -128,6 +159,13 @@ public class ACListener implements Listener {
         route(p, Check.EV_MOVE, c -> c.onMove(e, data));
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onAttackRequest(io.papermc.paper.event.player.PrePlayerAttackEntityEvent e) {
+        PlayerData d = dataOf(e.getPlayer());
+        if (d != null && e.willAttack())
+            d.recordAttackRequest(e.getAttacked().getUniqueId(), plugin.getCheckManager().getTick());
+    }
+
     // ---------- 战斗 ----------
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -141,7 +179,11 @@ public class ACListener implements Listener {
         if (data == null) {
             return;
         }
+        if (e.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK) return;
+        if (plugin.getBehaviorContext().isSpecialDamage(p)) return;
+        if (!data.consumeAttackRequest(e.getEntity().getUniqueId(), plugin.getCheckManager().getTick())) return;
         route(p, Check.EV_DAMAGE_DEALT, c -> c.onDamageDealt(e, data));
+        data.lastCombatTick = plugin.getCheckManager().getTick();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -154,6 +196,7 @@ public class ACListener implements Listener {
         if (data == null) {
             return;
         }
+        if (e.getFinalDamage() > 0) data.lastDamageTick = plugin.getCheckManager().getTick();
         route(p, Check.EV_DAMAGE_TAKEN, c -> c.onDamageTaken(e, data));
     }
 
@@ -203,39 +246,15 @@ public class ACListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onChat(AsyncPlayerChatEvent e) {
-        Player p = e.getPlayer();
-        PlayerData data = dataOf(p);
-        if (data == null) {
-            return;
-        }
-        // 禁言拦截(异步线程, 发消息切主线程)
-        if (data.muteUntil > System.currentTimeMillis()) {
-            e.setCancelled(true);
-            final Player fp = p;
-            final long remain = (data.muteUntil - System.currentTimeMillis()) / 1000 + 1;
-            Bukkit.getScheduler().runTask(plugin, () -> fp.sendMessage(
-                    org.bukkit.ChatColor.RED + "你正在被禁言中, 剩余 " + remain + " 秒"));
-            return;
-        }
-        // 聊天刷屏检测（异步线程，不走主线程豁免缓存）
-        routeAsyncOnly(p, CheckType.CHAT, c -> c.onChat(e, data));
+        Check c = plugin.getCheckManager().getCheck(CheckType.CHAT);
+        if (c != null) c.onChat(e, null);
     }
 
-    /** 异步事件专用路由：只匹配单一检测类型，不触碰主线程的豁免缓存 */
-    private void routeAsyncOnly(Player p, CheckType only, CheckAction action) {
-        for (Check c : plugin.getCheckManager().getChecks()) {
-            if (c.getType() != only) {
-                continue;
-            }
-            if (!c.isEnabled()) {
-                return;
-            }
-            try {
-                action.run(c);
-            } catch (Throwable ignored) {
-            }
-            return;
-        }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventory(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (!(e.getWhoClicked() instanceof Player p)) return;
+        PlayerData d = dataOf(p);
+        if (d != null) route(p, Check.EV_INVENTORY, c -> c.onInventory(e, d));
     }
 
     // ---------- 击退 / 传送 ----------
@@ -260,6 +279,10 @@ public class ACListener implements Listener {
             return;
         }
         data.teleportExemptTicks = 5;
+        data.rotationDeltas.clear(); data.yawDeltas.clear();
+        data.lastYaw = e.getTo().getYaw(); data.lastPitch = e.getTo().getPitch();
+        data.falling = false; data.damageLocation = null; data.expectedKbSpeed = 0;
+        data.checkBuffer.clear(); data.checkConsecutive.clear();
         route(p, Check.EV_TELEPORT, c -> c.onTeleport(e, data));
     }
 }

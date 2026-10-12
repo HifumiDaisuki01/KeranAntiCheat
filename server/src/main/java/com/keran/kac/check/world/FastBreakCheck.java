@@ -65,14 +65,15 @@ public class FastBreakCheck extends Check {
         }
 
         long now = System.currentTimeMillis();
+        double weight = hardnessWeight(e.getBlock().getType());
         data.breakTimestamps.addLast(now);
+        data.breakWeights.addLast(weight);
         // 只保留最近 3 秒
         while (!data.breakTimestamps.isEmpty()
                 && now - data.breakTimestamps.peekFirst() > 3000) {
             data.breakTimestamps.removeFirst();
+            data.breakWeights.removeFirst();
         }
-
-        double weight = hardnessWeight(e.getBlock().getType());
 
         // 效率附魔每级显著提速 → 放宽
         int efficiency = 0;
@@ -99,9 +100,11 @@ public class FastBreakCheck extends Check {
 
         // 统计最近 1 秒内的硬度权重总量
         double recentWeight = 0;
+        java.util.Iterator<Double> weights = data.breakWeights.iterator();
         for (long ts : data.breakTimestamps) {
+            double recordedWeight = weights.next();
             if (now - ts <= 1000) {
-                recentWeight += weight;
+                recentWeight += recordedWeight;
             }
         }
         // 只对"高硬度"方块的加速有意义：单块高硬度方块本身权重大

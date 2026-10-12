@@ -59,10 +59,10 @@ public class ReachCheck extends Check {
         Location target = victim instanceof LivingEntity
                 ? ((LivingEntity) victim).getEyeLocation()
                 : victim.getLocation();
-        double dist = eye.distance(target);
+        double dist = com.keran.kac.util.CombatGeometry.distanceToBox(eye.toVector(), victim.getBoundingBox());
 
         // ---------- 补偿 1：延迟补偿 ----------
-        double lagFactor = 1.0 + (Math.max(0, MoveUtil.pingOf(attacker)) / 100.0)
+        double lagFactor = 1.0 + (Math.min(300, Math.max(0, MoveUtil.pingOf(attacker))) / 100.0)
                 * plugin.getConfigManager().getReachLagRatio();
 
         // ---------- 补偿 2：目标移动补偿 ----------

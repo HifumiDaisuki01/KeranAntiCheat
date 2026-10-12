@@ -31,6 +31,7 @@ public class AntiKbCheck extends Check {
     @Override
     public void onVelocity(PlayerVelocityEvent e, PlayerData data) {
         Player p = e.getPlayer();
+        data.expectedKbSpeed = 0;
         // 记录服务端确实下发过击退
         data.lastVelocityTick = plugin.getCheckManager().getTick();
 
@@ -38,7 +39,7 @@ public class AntiKbCheck extends Check {
         double resist = MoveUtil.getKnockbackResistance(p);
         double exemptResist = plugin.getConfigManager().getCheckDouble(type, "exempt-kb-resist", 0.4);
         if (resist >= exemptResist) {
-            data.kbResistStreak = 0;
+            data.antiKbStreak = 0;
             decay(data);
             return;
         }
@@ -46,7 +47,7 @@ public class AntiKbCheck extends Check {
         if (MoveUtil.isInLiquid(p) || MoveUtil.isInWeb(p) || MoveUtil.isBesideWall(p)
                 || MoveUtil.isInPowderSnow(p) || MoveUtil.canFly(p)
                 || p.isInsideVehicle() || p.isBlocking()) {
-            data.kbResistStreak = 0;
+            data.antiKbStreak = 0;
             decay(data);
             return;
         }
@@ -56,12 +57,12 @@ public class AntiKbCheck extends Check {
         double expected = Math.hypot(v.getX(), v.getZ());
         if (expected < 0.08) {
             // 击退本身就极小（低击退武器），不具备判定意义
-            data.kbResistStreak = 0;
+            data.antiKbStreak = 0;
             decay(data);
             return;
         }
         // 记录期望击退幅度，供 onTick 校验
-        data.lastHitOffset = expected;
+        data.expectedKbSpeed = expected;
     }
 
     @Override
@@ -80,23 +81,23 @@ public class AntiKbCheck extends Check {
             org.bukkit.util.Vector v = p.getVelocity();
             double actual = Math.hypot(v.getX(), v.getZ());
             // 服务端下发了击退，但玩家速度几乎为 0，且位移也没有
-            if (actual < 0.02 && data.lastHitOffset > 0.15) {
-                data.kbResistStreak++;
+            if (actual < 0.02 && data.expectedKbSpeed > 0.15) {
+                data.antiKbStreak++;
                 int required = plugin.getConfigManager().getCheckInt(type, "required-streak", 4);
-                if (data.kbResistStreak >= required) {
+                if (data.antiKbStreak >= required) {
                     double severity = 1.6;
                     if (observe(data, severity)) {
                         flag(data, String.format(java.util.Locale.ROOT,
                                 "连续 %d 次收到击退但未产生位移 (期望 %.2f, 实际 %.3f)",
-                                data.kbResistStreak, data.lastHitOffset, actual), severity);
+                                data.antiKbStreak, data.expectedKbSpeed, actual), severity);
                     }
-                    data.kbResistStreak = 0;
+                    data.antiKbStreak = 0;
                 }
             } else {
-                data.kbResistStreak = 0;
+                data.antiKbStreak = 0;
                 decay(data);
             }
-            data.lastHitOffset = 0;
+            data.expectedKbSpeed = 0;
         }
     }
 

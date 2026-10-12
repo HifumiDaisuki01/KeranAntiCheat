@@ -116,7 +116,7 @@ public class ClientBridgeCommands {
             return;
         }
         // 客户端连入已自动上报全量清单, 直接显示缓存
-        module.sendDetailTo(sender, target, d);
+        send(sender, module.requestDetail(target, sender) ? "§7已请求客户端后台扫描详细清单" : "§e客户端查询正在进行或不可用");
     }
 
     private void queryModsMd5(CommandSender sender, String[] args) {
@@ -134,7 +134,7 @@ public class ClientBridgeCommands {
             send(sender, "§c该玩家未上报指纹(未安装 KeranClient 或尚未上报)");
             return;
         }
-        module.sendFilesTo(sender, target, d);
+        send(sender, module.requestModsMd5(target, sender) ? "§7已请求客户端后台扫描mods清单" : "§e客户端查询正在进行或不可用");
     }
 
     private void queryPacksMd5(CommandSender sender, String[] args) {
@@ -152,7 +152,7 @@ public class ClientBridgeCommands {
             send(sender, "§c该玩家未上报指纹(未安装 KeranClient 或尚未上报)");
             return;
         }
-        module.sendPackMd5To(sender, target, d);
+        send(sender, module.requestPacksMd5(target, sender) ? "§7已请求客户端后台扫描材质包清单" : "§e客户端查询正在进行或不可用");
     }
 
     private void list(CommandSender sender) {

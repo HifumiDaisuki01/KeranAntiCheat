@@ -61,18 +61,23 @@ public final class FileScanner {
         if (dir == null || !Files.isDirectory(dir)) {
             return files;
         }
-        collect(dir, suffix, withMd5, files);
+        collect(dir, dir, suffix, withMd5, files, 0);
         return files;
     }
 
-    private static void collect(Path dir, String suffix, boolean withMd5, List<FileInfo> out) {
+    private static void collect(Path root, Path dir, String suffix, boolean withMd5, List<FileInfo> out, int depth) {
+        if (Thread.currentThread().isInterrupted()) return;
+        if (depth > 16) throw new IllegalStateException("文件目录超过16层");
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
             for (Path p : stream) {
+                if (Files.isSymbolicLink(p)) continue;
+                if (Thread.currentThread().isInterrupted()) break;
                 if (Files.isDirectory(p)) {
-                    collect(p, suffix, withMd5, out);
+                    collect(root, p, suffix, withMd5, out, depth + 1);
                 } else {
-                    String name = p.getFileName().toString();
+                    String name = root.relativize(p).toString().replace(java.io.File.separatorChar, '/');
                     if (name.toLowerCase().endsWith(suffix)) {
+                        if (out.size() >= 512) throw new IllegalStateException("文件清单超过512项");
                         long size = 0;
                         try {
                             size = Files.size(p);
@@ -94,6 +99,7 @@ public final class FileScanner {
             byte[] buffer = new byte[8192];
             int read;
             while ((read = in.read(buffer)) != -1) {
+                if (Thread.currentThread().isInterrupted()) return null;
                 md.update(buffer, 0, read);
             }
             byte[] digest = md.digest();
@@ -114,48 +120,6 @@ public final class FileScanner {
             arr.add(f.toJson(withMd5));
         }
         return arr;
-    }
-
-    // ===== 目录整体 MD5 预计算缓存 =====
-    // 客户端启动时在后台线程计算, 进服上报时直接读取缓存, 避免进服时卡顿
-    private static volatile String cachedModsDirMd5;
-    private static volatile String cachedPacksDirMd5;
-
-    /** 启动预计算: 后台线程扫描 mods/材质包目录并计算整体 MD5 */
-    public static void precomputeDirMd5() {
-        Thread t = new Thread(() -> {
-            try {
-                cachedModsDirMd5 = dirMd5(scanModsJars());
-            } catch (Exception e) {
-                KeranClientMod.getLogger().warn("预计算 mods 目录 MD5 失败: " + e.getMessage());
-            }
-            try {
-                cachedPacksDirMd5 = dirMd5(scanResourcePackZips());
-            } catch (Exception e) {
-                KeranClientMod.getLogger().warn("预计算材质包目录 MD5 失败: " + e.getMessage());
-            }
-            KeranClientMod.getLogger().info("目录 MD5 预计算完成: mods="
-                    + (cachedModsDirMd5 == null ? "?" : cachedModsDirMd5)
-                    + " packs=" + (cachedPacksDirMd5 == null ? "?" : cachedPacksDirMd5));
-        }, "KeranClient-DirMd5");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    /** 获取 mods 目录整体 MD5 (优先缓存, 未就绪则同步计算) */
-    public static String modsDirMd5Cached() {
-        if (cachedModsDirMd5 == null) {
-            cachedModsDirMd5 = dirMd5(scanModsJars());
-        }
-        return cachedModsDirMd5;
-    }
-
-    /** 获取材质包目录整体 MD5 (优先缓存, 未就绪则同步计算) */
-    public static String packsDirMd5Cached() {
-        if (cachedPacksDirMd5 == null) {
-            cachedPacksDirMd5 = dirMd5(scanResourcePackZips());
-        }
-        return cachedPacksDirMd5;
     }
 
     /**

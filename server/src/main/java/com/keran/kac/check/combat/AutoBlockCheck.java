@@ -44,7 +44,7 @@ public class AutoBlockCheck extends Check {
         }
         long tick = plugin.getCheckManager().getTick();
         // 要求"刚刚还在攻击"或"攻击后立刻格挡"，排除正常举盾接近
-        long sinceAttack = tick - data.lastAttackTick;
+        long sinceAttack = tick - data.lastCombatTick;
         boolean suspicious = sinceAttack <= 2;
 
         if (suspicious) {

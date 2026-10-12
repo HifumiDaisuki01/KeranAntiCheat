@@ -60,7 +60,7 @@ public class VelocityCheck extends Check {
         data.lastDamageTick = plugin.getCheckManager().getTick();
         data.damageLocation = victim.getLocation();
         // 记录受击时的击退抗性，供检查阶段参考
-        data.lastHitOffset = kbResist;
+
     }
 
     @Override
@@ -86,7 +86,7 @@ public class VelocityCheck extends Check {
 
             // 延迟补偿：高 ping 玩家位移同步滞后，放宽要求
             int ping = MoveUtil.pingOf(victim);
-            double tolerant = minDist * (1.0 + (ping / 100.0) * 0.5);
+            double tolerant = minDist / (1.0 + (Math.min(300, Math.max(0, ping)) / 100.0) * 0.5);
 
             if (dist < tolerant) {
                 // 记录连续无击退次数：真 AntiKB 是持续性的

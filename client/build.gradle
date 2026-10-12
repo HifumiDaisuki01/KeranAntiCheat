@@ -6,16 +6,8 @@ version = project.mod_version
 group = project.maven_group
 
 repositories {
-    // 阿里云镜像(加速 central 依赖)
-    maven {
-        name = 'Aliyun'
-        url = 'https://maven.aliyun.com/repository/public'
-    }
     mavenCentral()
-    maven {
-        name = 'Fabric'
-        url = 'https://maven.fabricmc.net/'
-    }
+    maven { url = 'https://maven.fabricmc.net/' }
 }
 
 dependencies {
@@ -36,7 +28,8 @@ java {
 processResources {
     inputs.property "version", project.version
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        // Groovy expand interprets escaped newlines, corrupting JSON strings.
+        filter { line -> line.replace('${version}', project.version.toString()) }
     }
 }
 

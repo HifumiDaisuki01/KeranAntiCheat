@@ -49,37 +49,17 @@ public class HitboxCheck extends Check {
             return;
         }
 
-        // 计算从眼睛到目标中心的射线，与"眼睛到目标最近点"的偏差
         Location eye = attacker.getEyeLocation();
-        Location center = target.getLocation().add(0, target.getHeight() / 2.0, 0);
-        Vector toTarget = center.toVector().subtract(eye.toVector());
-        double dist = toTarget.length();
-        if (dist < 0.01) {
-            return;
-        }
-        Vector dir = toTarget.clone().normalize();
-        Vector look = eye.getDirection();
-
-        // 视线与目标方向夹角 → 横向偏移（垂足距离）
-        double dot = Math.max(-1.0, Math.min(1.0, look.dot(dir)));
-        double angle = Math.toDegrees(Math.acos(dot));
-        // 横向偏移 ≈ 距离 × sin(夹角)
-        double lateralOffset = dist * Math.sin(Math.toRadians(angle));
-
-        // 容差 = 目标碰撞箱半径 + 延迟补偿
-        double radius = target.getWidth() / 2.0;
-        double lagFactor = 1.0 + (Math.max(0, MoveUtil.pingOf(attacker)) / 100.0) * 0.20;
-        double tolerance = (radius + 0.25) * lagFactor;
-
-        data.lastHitOffset = lateralOffset;
-
-        if (lateralOffset > tolerance) {
-            double over = (lateralOffset - tolerance) / Math.max(0.1, tolerance);
-            double severity = Math.min(3.0, 1.2 + over * 1.5);
+        double dist = com.keran.kac.util.CombatGeometry.distanceToBox(eye.toVector(), target.getBoundingBox());
+        double padding = 0.15 + Math.min(300, Math.max(0, MoveUtil.pingOf(attacker))) * 0.001;
+        boolean intersects = target.getBoundingBox().clone().expand(padding)
+                .rayTrace(eye.toVector(), eye.getDirection(), dist + target.getWidth() + target.getHeight() + 1) != null;
+        if (!intersects) {
+            double severity = 1.4;
             if (observe(data, severity)) {
                 flag(data, String.format(java.util.Locale.ROOT,
-                        "命中偏移 %.2f 格超出碰撞箱半径 %.2f (目标 %s, 夹角 %.1f°)",
-                        lateralOffset, radius, target.getName(), angle), severity);
+                        "近战视线未穿过目标碰撞箱 (距离 %.2f, 容差 %.2f, 目标 %s)",
+                        dist, padding, target.getName()), severity);
             }
         } else {
             decay(data);

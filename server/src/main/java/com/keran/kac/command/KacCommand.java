@@ -63,6 +63,7 @@ public class KacCommand implements CommandExecutor, TabCompleter {
                 if (!hasAdmin(sender)) return true;
                 plugin.getConfigManager().reload();
                 plugin.getBanManager().load();
+                plugin.getClientBridge().reloadPolicy();
                 send(sender, "§a配置已重载");
                 break;
             case "alerts":
@@ -213,23 +214,13 @@ public class KacCommand implements CommandExecutor, TabCompleter {
         if (online != null) {
             PlayerData data = plugin.getCheckManager().getPlayerData(online);
             if (data != null) {
-                data.resetAllVl();
+                plugin.getCheckManager().resetPlayerRecord(online.getUniqueId());
             }
             send(sender, "§a已清零 §e" + args[1] + " §a的违规记录");
             return;
         }
         OfflinePlayer op = Bukkit.getOfflinePlayer(args[1]);
-        // 从持久化文件清除
-        java.io.File file = new java.io.File(plugin.getDataFolder(), "data" + java.io.File.separator + "vl.yml");
-        if (file.exists()) {
-            org.bukkit.configuration.file.YamlConfiguration yml =
-                    org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file);
-            yml.set("players." + op.getUniqueId().toString(), null);
-            try {
-                yml.save(file);
-            } catch (Exception ignored) {
-            }
-        }
+        plugin.getCheckManager().resetPlayerRecord(op.getUniqueId());
         send(sender, "§a已清零 §e" + args[1] + " §a的违规记录");
     }
 

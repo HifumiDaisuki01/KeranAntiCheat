@@ -52,19 +52,23 @@ public final class ModScanner {
         List<String> files = new ArrayList<>();
         Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
         if (Files.isDirectory(modsDir)) {
-            collectJars(modsDir, files);
+            collectJars(modsDir, files, 0);
         }
         return files;
     }
 
-    private static void collectJars(Path dir, List<String> out) {
+    private static void collectJars(Path dir, List<String> out, int depth) {
+        if (Thread.currentThread().isInterrupted()) return;
+        if (depth > 16) throw new IllegalStateException("mods目录超过16层");
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
             for (Path p : stream) {
+                if (Files.isSymbolicLink(p)) continue;
                 if (Files.isDirectory(p)) {
-                    collectJars(p, out);
+                    collectJars(p, out, depth + 1);
                 } else {
                     String name = p.getFileName().toString();
                     if (name.toLowerCase().endsWith(".jar")) {
+                        if (out.size() >= 512) throw new IllegalStateException("mods清单超过512项");
                         out.add(name);
                     }
                 }

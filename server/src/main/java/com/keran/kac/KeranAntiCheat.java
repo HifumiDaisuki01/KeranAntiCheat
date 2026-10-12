@@ -25,6 +25,7 @@ public final class KeranAntiCheat extends JavaPlugin {
     private BanManager banManager;
     private ClientBridgeModule clientBridge;
     private ClientBridgeCommands clientCommands;
+    private com.keran.kac.api.BehaviorContext behaviorContext;
 
     @Override
     public void onEnable() {
@@ -40,6 +41,7 @@ public final class KeranAntiCheat extends JavaPlugin {
         this.banManager.load();
 
         this.checkManager = new CheckManager(this);
+        this.behaviorContext = new com.keran.kac.api.BehaviorContext(this);
         this.checkManager.registerChecks();
 
         // 客户端桥接模块(强制安装门槛 / 指纹上报 / MD5 严格校验)
@@ -50,6 +52,8 @@ public final class KeranAntiCheat extends JavaPlugin {
         // 事件监听
         ACListener listener = new ACListener(this);
         Bukkit.getPluginManager().registerEvents(listener, this);
+
+        for (org.bukkit.entity.Player p : Bukkit.getOnlinePlayers()) checkManager.addPlayer(p);
 
         // 命令(整合: 反作弊 + 客户端桥接)
         KacCommand cmd = new KacCommand(this, this.clientCommands);
@@ -62,7 +66,7 @@ public final class KeranAntiCheat extends JavaPlugin {
         // 定时保存违规数据
         int saveMinutes = configManager.getSaveVlMinutes();
         if (saveMinutes > 0) {
-            Bukkit.getScheduler().runTaskTimerAsynchronously(this,
+            Bukkit.getScheduler().runTaskTimer(this,
                     () -> checkManager.saveAllData(), saveMinutes * 1200L, saveMinutes * 1200L);
         }
 
@@ -97,7 +101,7 @@ public final class KeranAntiCheat extends JavaPlugin {
     @Override
     public void onDisable() {
         if (checkManager != null) {
-            checkManager.saveAllData();
+            checkManager.shutdown();
         }
         if (clientBridge != null) {
             clientBridge.shutdown();
@@ -120,6 +124,8 @@ public final class KeranAntiCheat extends JavaPlugin {
     public BanManager getBanManager() {
         return banManager;
     }
+
+    public com.keran.kac.api.BehaviorContext getBehaviorContext() { return behaviorContext; }
 
     public ClientBridgeModule getClientBridge() {
         return clientBridge;

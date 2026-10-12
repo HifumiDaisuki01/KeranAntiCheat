@@ -1,5 +1,7 @@
+config-version: 4
+
 # ============================================================
-#  Keran Anti Cheat 配置文件 v3.0.0 (Paper 1.20.1 枪械 PVP / PVE 刷怪服)
+#  Keran Anti Cheat 配置文件 v3.2.0 (Paper 1.20.1 枪械 PVP / PVE 刷怪服)
 #  命令: /kac help   权限: kac.admin(管理) kac.notify(告警) kac.bypass(豁免)
 #
 #  【v3.0 检测引擎说明】
@@ -44,10 +46,15 @@ settings:
 
 punishments:
   # 全局默认处罚阶梯: 违规值(vl)达到后执行
-  # 每个检测可在下方 checks.<名称>.kick-vl / ban-vl 单独覆盖
-  # 注意: vl 现在是加权值（double），阈值含义与老版略有不同
+  #
+  # 【v3.1 重要变更】未显式配置的检测器现在会真正回落到这里的默认值。
+  #   - kick-vl / ban-vl 写 0 或不写  → 使用下面的 default-* 值
+  #   - kick-vl / ban-vl 写 -1        → 显式关闭该检测的自动处罚(纯观察模式)
+  # 老版本因下方每个检测都显式写着 0，导致 default-kick-vl 永不生效、反作弊只会告警。
+  # 注意: vl 是加权值（double），阈值含义与老版略有不同
   default-kick-vl: 20
   default-ban-vl: 40
+  auto-ban-hours: 24  # 自动封禁小时数；0 = 永久
 
 messages:
   kick: "§c[KAC] §f你因违规(§c%reason%§f)被移出服务器"
@@ -58,12 +65,17 @@ messages:
 #  强制安装门槛 / 指纹上报 / MD5 严格校验
 # ============================================================
 
-# 强制门槛: 未安装 KeranClient 的玩家禁止进入
+# strict-mode 只控制客户端安装门槛；不影响服务端检测。
+# false: 允许原版客户端；true: 必须在期限内提交当前会话的有效报告。
+client:
+  strict-mode: true
+
+# 旧版 join.enabled / kick-if-no-client 仅用于首次迁移，后续用上面的开关。
 join:
   # 是否启用强制安装检查
   enabled: true
   # 玩家进服后等待上报/频道注册的秒数(超时即踢)
-  wait-seconds: 5
+  wait-seconds: 20
   # 超过等待时间未上报是否踢出(强制安装)
   kick-if-no-client: true
   # 踢出消息
@@ -73,6 +85,7 @@ join:
 
 # 黑名单命中后的处理
 blacklist:
+  mod-ids: [wurst, meteor-client, aristois]
   # 命中黑名单(已知作弊 mod)是否告警
   alert: true
   # 命中黑名单是否直接踢出
@@ -128,7 +141,7 @@ checks:
   # ==================== 移动检测 ====================
   fly:
     enabled: true
-    kick-vl: 0            # 0 = 不自动处罚, 仅告警
+    kick-vl: 0            # 0 = 沿用全局处罚；-1 = 不自动处罚
     ban-vl: 0
     # 连续异常次数（飞行特征会持续多 tick，4 次足够稳）
     min-consecutive: 4
@@ -188,12 +201,20 @@ checks:
     max-wall-rise: 1.8
   blink:
     enabled: true
+    # v3.1: 0 = 沿用 punishments.default-kick-vl；-1 = 显式关闭自动处罚
     kick-vl: 0
     ban-vl: 0
     min-consecutive: 3
     alert-threshold: 2.5
-    # 单次移动事件的最大位移(格)，已按 ping 自动放宽
-    max-distance: 3.0
+    # 【v3.1 KAC-05 口径变更】现在表示"每 tick 允许的最大位移(格)"，不是"单次事件位移"。
+    # 原因: Paper 内置 moved too quickly! 校验先于插件生效且为丢弃式，
+    #       超限包根本到不了插件，"单次事件位移 >3 格"的判据永远打不中。
+    # 人类参考上限: 疾跑 0.28 / 跳跃加速 ≈0.4 / 鞘翅 ≈0.7 格每tick。
+    # 1.6 已留约 4 倍余量；若服务器有大量击退/爆炸类道具可上调到 2.0~2.5。
+    # 兼容: 若此处仍填 >=3.0 的旧值，插件会自动折算为 1.6。
+    max-distance: 1.6
+    # 非预期来源(非末影珍珠/传送门/插件)的同世界瞬移距离上限(格)
+    max-teleport-distance: 24.0
   elytra:
     enabled: true
     kick-vl: 0
@@ -251,13 +272,14 @@ checks:
     # 短时间内切换目标的次数上限
     fast-switch-count: 6
   aim:
+    observe-only: true
     enabled: true
     kick-vl: 0
     ban-vl: 0
     min-consecutive: 3
     alert-threshold: 2.5
     # 单帧视角突变上限(度)。人类甩枪极限约 180°，这里放宽到 250° 只抓非人类行为
-    max-instant-rotation: 250
+    max-instant-rotation: 140
     # GCD 灵敏度一致性分析：样本数与最小网格步长
     # 瞄准机器人直接设置角度，增量无法形成稳定的鼠标灵敏度网格
     gcd-min-samples: 20
@@ -288,6 +310,7 @@ checks:
     min-consecutive: 4
     alert-threshold: 2.5
   autoclicker:
+    observe-only: true
     enabled: true         # v3.0: 默认开启(核心判据为间隔规律性, 不再依赖 CPS, 自动武器不会误判)
     kick-vl: 0
     ban-vl: 0
@@ -332,6 +355,7 @@ checks:
     min-consecutive: 4
     alert-threshold: 3.0
   backtrack:
+    observe-only: true
     enabled: true
     kick-vl: 0
     ban-vl: 0
@@ -356,6 +380,7 @@ checks:
 
   # ==================== 世界/交互检测 ====================
   xray:
+    observe-only: true
     enabled: true
     kick-vl: 0
     ban-vl: 0

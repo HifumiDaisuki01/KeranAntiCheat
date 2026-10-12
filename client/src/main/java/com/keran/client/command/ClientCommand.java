@@ -35,21 +35,13 @@ public final class ClientCommand {
     private static int status(CommandContext<FabricClientCommandSource> ctx) {
         MinecraftClient client = MinecraftClient.getInstance();
         boolean online = client.getNetworkHandler() != null;
-        JsonObject report = ClientReport.buildReport(KeranClientMod.getConfig(),
-                client.getSession() != null ? client.getSession().getUsername() : "");
 
         StringBuilder msg = new StringBuilder();
         msg.append("§8[§cKACClient§8] §fKeranClient v").append(KeranClientMod.MOD_VERSION).append("\n");
         msg.append(" §7状态: §a强制开启(不可关闭)").append("\n");
         msg.append(" §7游戏连接: ").append(online ? "§a在线" : "§c未连接").append("\n");
-        msg.append(" §7已加载 mod 数: §e").append(report.getAsJsonArray("mods").size()).append("\n");
-        msg.append(" §7黑名单命中: ").append(report.getAsJsonArray("blacklist_hits").size() > 0
-                ? "§c" + report.getAsJsonArray("blacklist_hits").toString() : "§a无").append("\n");
-        msg.append(" §7可疑条目: ").append(report.getAsJsonArray("suspicious").size() > 0
-                ? "§e" + report.getAsJsonArray("suspicious").toString() : "§a无").append("\n");
-        msg.append(" §7JVM注入: ").append(report.getAsJsonArray("jvm_agents").size() > 0
-                ? "§c" + report.getAsJsonArray("jvm_agents").toString() : "§a无").append("\n");
-        msg.append(" §7指纹: §f").append(safeSub(report.get("fingerprint").getAsString()));
+        msg.append(" §7已加载 mod 数: §e").append(net.fabricmc.loader.api.FabricLoader.getInstance().getAllMods().size());
+        msg.append("\n §7完整扫描在后台上报时执行");
         clientMsg(msg.toString());
         return 1;
     }
@@ -68,7 +60,7 @@ public final class ClientCommand {
             return 0;
         }
         ReportSender.sendReport();
-        clientMsg("§a[KACClient] 指纹报告已发送");
+        clientMsg("§a[KACClient] 已请求后台扫描和上报（需要服务端会话及白名单许可）");
         return 1;
     }
 

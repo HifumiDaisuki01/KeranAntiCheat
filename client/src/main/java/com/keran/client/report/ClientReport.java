@@ -25,11 +25,15 @@ public final class ClientReport {
 
     /** 生成完整报告 JSON */
     public static JsonObject buildReport(ClientConfig cfg, String playerName) {
+        return buildReport(cfg, playerName, new JsonArray(), java.util.List.of());
+    }
+
+    public static JsonObject buildReport(ClientConfig cfg, String playerName, JsonArray packs, List<String> badPacks) {
         JsonObject root = new JsonObject();
 
         // 基础
         root.addProperty("type", "report");
-        root.addProperty("v", "1.0.0");
+        root.addProperty("v", "2.1.0");
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 
@@ -76,12 +80,10 @@ public final class ClientReport {
         root.add("suspicious_jvm_args", suspJvm);
 
         // 环境
-        root.add("env", EnvScanner.envJson());
+
 
         // 资源包
-        JsonArray packs = ResourcePackScanner.enabledPacksJson();
         root.add("resourcepacks", packs);
-        List<String> badPacks = ResourcePackScanner.detectSuspiciousPacks();
         JsonArray badPacksArr = new JsonArray();
         for (String p : badPacks) {
             badPacksArr.add(p);
@@ -98,13 +100,15 @@ public final class ClientReport {
         // ===== 全量文件清单(连入自动上报, 无需服务端查询) =====
         // mods 目录文件: 名称 + 大小 + MD5
         List<FileScanner.FileInfo> modFiles = FileScanner.scanModsJars();
-        root.add("mod_files", FileScanner.toJson(modFiles, true));
+
         // 材质包目录文件: 名称 + 大小 + MD5
         List<FileScanner.FileInfo> packFiles = FileScanner.scanResourcePackZips();
-        root.add("pack_files", FileScanner.toJson(packFiles, true));
+
+        root.addProperty("mod_file_count", modFiles.size());
+        root.addProperty("pack_file_count", packFiles.size());
         // 目录整体指纹(客户端启动时预计算缓存, 任一文件变化都会改变)
-        root.addProperty("mods_dir_md5", FileScanner.modsDirMd5Cached());
-        root.addProperty("packs_dir_md5", FileScanner.packsDirMd5Cached());
+        root.addProperty("mods_dir_md5", FileScanner.dirMd5(modFiles));
+        root.addProperty("packs_dir_md5", FileScanner.dirMd5(packFiles));
 
         // 指纹哈希: 基于 mod 列表 + 关键环境, 防简单篡改
         root.addProperty("fingerprint", computeFingerprint(mods));
@@ -116,7 +120,7 @@ public final class ClientReport {
     public static JsonObject buildHeartbeat(String playerName) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "heartbeat");
-        o.addProperty("v", "1.0.0");
+        o.addProperty("v", "2.1.0");
         o.addProperty("player", playerName == null ? "" : playerName);
         o.addProperty("ts", System.currentTimeMillis());
         return o;
@@ -129,7 +133,7 @@ public final class ClientReport {
     public static JsonObject buildDetailReport(String playerName) {
         JsonObject root = new JsonObject();
         root.addProperty("type", "detail");
-        root.addProperty("v", "1.0.0");
+        root.addProperty("v", "2.1.0");
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 
@@ -152,7 +156,7 @@ public final class ClientReport {
     public static JsonObject buildFilesReport(String playerName) {
         JsonObject root = new JsonObject();
         root.addProperty("type", "files");
-        root.addProperty("v", "1.0.0");
+        root.addProperty("v", "2.1.0");
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 

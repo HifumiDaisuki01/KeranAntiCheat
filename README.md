@@ -1,5 +1,7 @@
 # Keran AntiCheat
 
+当前维护：服务端 **3.2.0** / 客户端 **2.1.0**。这是通用反作弊基础维护版本。参见 [更新记录](CHANGELOG-3.2.0.md) 与 [安装、严格模式和通用 API](docs/升级说明-3.2.0.md)。下方旧引擎算法说明保留作历史参考，实际限制以新版更新记录为准。
+
 > © Keran Technology Co., Ltd. | 官网 [tech.keran.cc](https://tech.keran.cc) | 问题反馈 FAQ@keran.cc
 
 Minecraft 服务器反作弊体系。**服务端插件 + 客户端模组**双端配合，覆盖移动、战斗、世界三大类共 **28 项检测**。
@@ -15,7 +17,7 @@ Minecraft 服务器反作弊体系。**服务端插件 + 客户端模组**双端
 
 | MC 版本 | 分支 | Release 标签 | 服务端插件 | 客户端模组 | 维护状态 |
 |---|---|---|---|---|---|
-| **1.20.1** | `main` | `v2` / `v3.1.0` | KeranAntiCheat 3.1.0 | KeranClient 2.0.0 | ✅ **持续更新中** |
+| **1.20.1** | `main` | `v2` / `v3.1.0` | KeranAntiCheat 3.2.0 | KeranClient 2.1.0 | ✅ **持续更新中** |
 | 1.16.5 | `1.16.5` | `v1-release1` | KeranAntiCheat 2.0.0 | KeranClient 1.1.0 | ⛔ **已停止维护** |
 
 > ### ⚠️ 关于 1.16.5 版本
@@ -56,13 +58,13 @@ Minecraft 服务器反作弊体系。**服务端插件 + 客户端模组**双端
 
 ```
 server/                 服务端插件
-  ├── src/              源码 (41 个 java 文件)
+  ├── src/              源码
   ├── pom.xml           Maven 构建配置
-  └── KeranAntiCheat-3.1.0.jar
+  └── KeranAntiCheat-3.2.0.jar
 client/                 客户端模组
-  ├── src/              源码 (11 个 java 文件)
+  ├── src/              源码
   ├── build.gradle      Fabric Loom 构建配置
-  └── KeranClient-2.0.0.jar
+  └── KeranClient-2.1.0.jar
 docs/
   ├── config.yml        服务端配置模板
   └── 使用文档-1.20.1.md
@@ -138,7 +140,7 @@ v2.0 老引擎误报严重的根因是**五重缺陷叠加**，v3.0 逐一修复
 2. 将 `KeranClient-*.jar` 与 **Fabric API** 一同放入 `mods/` 目录
 3. 启动游戏，进服后自动上报指纹
 
-> **客户端模组强制开启**，玩家无法关闭——这是防作弊的前提。
+> 服务端 `client.strict-mode` 可选择强制安装或允许原版玩家；详细行为见升级说明。
 
 ---
 

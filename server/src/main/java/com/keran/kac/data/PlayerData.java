@@ -15,6 +15,16 @@ public class PlayerData {
 
     private final UUID uuid;
     private final String name;
+    private UUID pendingAttackTarget;
+    private long pendingAttackTick;
+
+    public void recordAttackRequest(UUID target, long tick) {
+        pendingAttackTarget = target; pendingAttackTick = tick;
+    }
+    public boolean consumeAttackRequest(UUID target, long tick) {
+        if (tick != pendingAttackTick || !target.equals(pendingAttackTarget)) return false;
+        pendingAttackTarget = null; return true;
+    }
 
     /** 各检测器违规值 */
     private final Map<CheckType, Double> vl = new EnumMap<>(CheckType.class);
@@ -56,6 +66,7 @@ public class PlayerData {
     public long lastDamageTick = -10;     // 上次受伤 tick(用于击退/被攻击状态)
     public Location damageLocation = null; // 受伤瞬间位置(防击退检测)
     public long lastAttackTick = -10;     // 上次攻击 tick(KillAura 多目标)
+    public final java.util.Set<UUID> attackedThisTick = new java.util.HashSet<>();
     public int attacksSameTick = 0;
     public long lastVelocityTick = -10;
     public double lastFallDistance = 0;
@@ -104,6 +115,10 @@ public class PlayerData {
     public double lastHitOffset = 0;      // 上次命中偏移(命中箱)
     public int blockingAttackCount = 0;   // 攻击时仍在格挡计数(AutoBlock)
     public long lastBlockTime = 0;
+    public double expectedKbSpeed;
+    public int antiKbStreak;
+    public UUID lastCombatTarget;
+    public long lastCombatTick = -1000;
     public int kbResistStreak = 0;        // 连续无击退次数(AntiKB)
     public long lastKbCheckTick = 0;      // 上次击退检查 tick
     public final java.util.Deque<Long> attackTimestamps = new java.util.ArrayDeque<>(); // 攻击时间戳
@@ -126,6 +141,7 @@ public class PlayerData {
     public final java.util.Deque<Integer> oreStreak = new java.util.ArrayDeque<>();     // 连续挖矿序列
     public final java.util.Deque<Double> oreDepths = new java.util.ArrayDeque<>();      // 挖矿深度历史
     public int oresWithoutStone = 0;      // 未挖石头直接命中矿石计数(XRay)
+    public final java.util.Deque<Double> breakWeights = new java.util.ArrayDeque<>();
     public final java.util.Deque<Long> breakTimestamps = new java.util.ArrayDeque<>();  // 破坏时间戳
     public int inventoryOpsThisSecond = 0;
     public long inventoryWindowStart = 0;
@@ -224,10 +240,12 @@ public class PlayerData {
     /** 保存到配置节(供 /kac info 与重启保留) */
     public void serialize(org.bukkit.configuration.ConfigurationSection sec) {
         sec.set("name", name);
+        sec.set("saved-at", System.currentTimeMillis());
         for (CheckType t : CheckType.values()) {
             if (getVl(t) > 0) {
                 sec.set("vl." + t.getId(), getVl(t));
             }
+            sec.set("punishments." + t.getId(), getPunishments(t));
             if (getFlags(t) > 0) {
                 sec.set("flags." + t.getId(), getFlags(t));
             }
@@ -238,6 +256,7 @@ public class PlayerData {
     public void deserialize(org.bukkit.configuration.ConfigurationSection sec) {
         for (CheckType t : CheckType.values()) {
             vl.put(t, sec.getDouble("vl." + t.getId(), 0.0));
+            punishments.put(t, Math.max(0, sec.getInt("punishments." + t.getId(), 0)));
             flags.put(t, sec.getInt("flags." + t.getId(), 0));
         }
     }

@@ -14,7 +14,7 @@ import net.minecraft.util.Identifier;
  */
 public final class QueryReceiver {
 
-    private static final Identifier QUERY_CHANNEL = Identifier.of("kac", "query");
+    private static final Identifier QUERY_CHANNEL = new Identifier("kac", "query");
 
     private QueryReceiver() {
     }
@@ -30,21 +30,15 @@ public final class QueryReceiver {
             }
             final String ftype = type;
             // 切到客户端主线程执行(文件扫描涉及 IO)
-            client.execute(() -> handle(client, ftype));
+            client.execute(() -> { if (client.getNetworkHandler() == handler) handle(client, ftype); });
         });
     }
 
     private static void handle(MinecraftClient client, String type) {
-        String player = client.getSession() != null ? client.getSession().getUsername() : "";
-        if ("detail".equalsIgnoreCase(type)) {
-            ReportSender.sendJson(ReportSender.DETAIL_CHANNEL, ClientReport.buildDetailReport(player).toString());
-            KeranClientMod.getLogger().info("已响应服务端查询: 详细 mods/材质包清单");
-        } else if ("modsmd5".equalsIgnoreCase(type) || "packsmd5".equalsIgnoreCase(type)
-                || "files".equalsIgnoreCase(type)) {
-            ReportSender.sendJson(ReportSender.FILES_CHANNEL, ClientReport.buildFilesReport(player).toString());
-            KeranClientMod.getLogger().info("已响应服务端查询: MD5 校验清单(" + type + ")");
-        } else {
-            KeranClientMod.getLogger().warn("未知查询类型: " + type);
+        if (type.startsWith("challenge:")) {
+            ReportSender.acceptChallenge(type.substring(10));
+            return;
         }
+        ReportSender.respond(type);
     }
 }

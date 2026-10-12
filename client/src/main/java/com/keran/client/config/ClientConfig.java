@@ -49,7 +49,7 @@ public class ClientConfig {
         if (Files.exists(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
                 cfg = GSON.fromJson(reader, ClientConfig.class);
-            } catch (IOException e) {
+            } catch (IOException | com.google.gson.JsonParseException e) {
                 KeranClientMod.getLogger().warn("读取配置失败, 使用默认配置: " + e.getMessage());
                 cfg = new ClientConfig();
             }
@@ -90,16 +90,25 @@ public class ClientConfig {
         if (address == null) {
             return false;
         }
-        String addr = address.toLowerCase(Locale.ROOT);
+        String addr = normalizeAddress(address);
         for (String w : serverWhitelist) {
             if (w == null || w.isEmpty()) {
                 continue;
             }
-            if (addr.contains(w.toLowerCase(Locale.ROOT))) {
+            if (addr.equals(normalizeAddress(w))) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static String normalizeAddress(String address) {
+        String addr = address.toLowerCase(Locale.ROOT).trim();
+        int slash = addr.indexOf('/');
+        if (slash >= 0) addr = slash == 0 ? addr.substring(1) : addr.substring(0, slash);
+        int colon = addr.lastIndexOf(':');
+        if (colon >= 0 && addr.indexOf(':') == colon) addr = addr.substring(0, colon);
+        return addr;
     }
 
     public JsonArray toJson() {

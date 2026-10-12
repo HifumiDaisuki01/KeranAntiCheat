@@ -44,6 +44,7 @@ public class ConfigManager {
             plugin.saveResource("config.yml", false);
         }
         config = YamlConfiguration.loadConfiguration(configFile);
+        migrate(config);
         // 与 jar 内默认配置合并, 保证新增键有默认值
         InputStream def = plugin.getResource("config.yml");
         if (def != null) {
@@ -53,7 +54,24 @@ public class ConfigManager {
             } catch (Exception ignored) {
             }
         }
+        try { config.save(configFile); }
+        catch (java.io.IOException e) { plugin.getLogger().warning("配置保存失败: " + e.getMessage()); }
         reloadCache();
+    }
+
+    /** Run before adding defaults: copyDefaults changes Bukkit isSet semantics. */
+    public static void migrate(FileConfiguration config) {
+        // Preserve old join policy on upgrade; the new key is authoritative afterwards.
+        if (!config.isSet("client.strict-mode")) {
+            config.set("client.strict-mode", config.getBoolean("join.enabled", true)
+                    && config.getBoolean("join.kick-if-no-client", true));
+        }
+        if (!config.isSet("config-version") || config.getInt("config-version") < 4) {
+            if (config.getDouble("checks.aim.max-instant-rotation", 250) == 250) {
+                config.set("checks.aim.max-instant-rotation", 140);
+            }
+            config.set("config-version", 4);
+        }
     }
 
     public void reload() {
@@ -72,6 +90,18 @@ public class ConfigManager {
         velocityExemptTicks = config.getInt("settings.velocity-exempt-ticks", 12);
         decayRate = config.getDouble("settings.evidence-decay-rate", 0.35);
         vlDecay = config.getDouble("settings.vl-decay-per-10s", 0.5);
+    }
+
+    public boolean isStrictClientMode() {
+        return config.getBoolean("client.strict-mode", true);
+    }
+
+    public int getClientWaitSeconds() {
+        return Math.max(5, Math.min(120, config.getInt("join.wait-seconds", 20)));
+    }
+
+    public boolean isObserveOnly(CheckType type) {
+        return config.getBoolean("checks." + type.getId() + ".observe-only", false);
     }
 
     public FileConfiguration get() {

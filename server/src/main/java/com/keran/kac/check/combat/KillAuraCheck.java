@@ -55,7 +55,8 @@ public class KillAuraCheck extends Check {
 
         if (maxTargets > 0) {
             if (tick == data.lastAttackTick) {
-                data.attacksSameTick++;
+                data.attackedThisTick.add(victim.getUniqueId());
+                data.attacksSameTick = data.attackedThisTick.size();
                 // 只有"分散"的多个目标才算 KillAura 特征
                 double spread = data.lastAttackTargetLoc != null
                         ? data.lastAttackTargetLoc.distance(victim.getLocation()) : 0;
@@ -72,6 +73,8 @@ public class KillAuraCheck extends Check {
                 }
             } else {
                 data.lastAttackTick = tick;
+                data.attackedThisTick.clear();
+                data.attackedThisTick.add(victim.getUniqueId());
                 data.attacksSameTick = 1;
                 data.lastAttackTargetLoc = victim.getLocation();
             }
@@ -80,7 +83,8 @@ public class KillAuraCheck extends Check {
         // ================= 检查二：目标切换速度 =================
         // 通过上一 tick 记录的目标判断是否频繁切换
         int switchThreshold = plugin.getConfigManager().getCheckInt(type, "fast-switch-count", 6);
-        if (data.lastTargetSwitchTick > 0 && tick - data.lastTargetSwitchTick <= 2) {
+        if (data.lastCombatTarget != null && !data.lastCombatTarget.equals(victim.getUniqueId())
+                && data.lastTargetSwitchTick > 0 && tick - data.lastTargetSwitchTick <= 2) {
             data.targetsSwitchedFast++;
             if (data.targetsSwitchedFast >= switchThreshold) {
                 double severity = 1.3;
@@ -94,6 +98,7 @@ public class KillAuraCheck extends Check {
             data.targetsSwitchedFast = Math.max(0, data.targetsSwitchedFast - 1);
         }
         data.lastTargetSwitchTick = tick;
+        data.lastCombatTarget = victim.getUniqueId();
 
         // ================= 检查三：视线偏离（持续偏离才是特征） =================
         double maxAngle = plugin.getConfigManager().getCheckDouble(type, "max-angle", 75);

@@ -42,6 +42,8 @@ public abstract class Check {
     public static final long EV_TELEPORT = 1L << 9;
     public static final long EV_TICK     = 1L << 10;
 
+    public static final long EV_INVENTORY = 1L << 11;
+
     protected final KeranAntiCheat plugin;
     protected final CheckType type;
 
@@ -178,7 +180,8 @@ public abstract class Check {
 
     /** 移动类检测的通用临时豁免(击退中/传送后) */
     protected final boolean isMovementExempt(PlayerData data) {
-        return data.velocityExemptTicks > 0 || data.teleportExemptTicks > 0;
+        return data.velocityExemptTicks > 0 || data.teleportExemptTicks > 0
+                || plugin.getBehaviorContext().isMovementExempt(data.getUuid(), type);
     }
 
     /**
@@ -191,7 +194,7 @@ public abstract class Check {
      * @return 放宽后的阈值
      */
     protected final double lagCompensate(double base, int ping, double ratio) {
-        int p = Math.max(0, ping);
+        int p = Math.min(300, Math.max(0, ping));
         return base * (1.0 + (p / 100.0) * ratio);
     }
 
@@ -221,6 +224,8 @@ public abstract class Check {
     }
 
     // ---- 事件回调(按需覆写) ----
+
+    public void onInventory(org.bukkit.event.inventory.InventoryClickEvent e, PlayerData data) {}
 
     public void onMove(PlayerMoveEvent e, PlayerData data) {
     }

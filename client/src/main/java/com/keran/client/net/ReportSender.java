@@ -7,103 +7,131 @@ import com.keran.client.report.ClientReport;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
+import java.util.concurrent.*;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
-/**
- * 上报与心跳发送器。
- * 频道: kac:report(详细指纹) / kac:heartbeat(存活心跳)
- */
+/** A worker owns scanning; all network/client access runs on the game thread. */
 public final class ReportSender {
-
-    public static final Identifier REPORT_CHANNEL = Identifier.of("kac", "report");
-    public static final Identifier HEARTBEAT_CHANNEL = Identifier.of("kac", "heartbeat");
-    public static final Identifier DETAIL_CHANNEL = Identifier.of("kac", "detail");
-    public static final Identifier FILES_CHANNEL = Identifier.of("kac", "files");
-
-    private static ScheduledExecutorService heartbeatExecutor;
+    public static final Identifier REPORT_CHANNEL = new Identifier("kac", "report");
+    public static final Identifier HEARTBEAT_CHANNEL = new Identifier("kac", "heartbeat");
+    public static final Identifier DETAIL_CHANNEL = new Identifier("kac", "detail");
+    public static final Identifier FILES_CHANNEL = new Identifier("kac", "files");
+    private static ScheduledExecutorService worker;
+    private static ClientPlayNetworkHandler connection;
     private static ClientConfig activeConfig;
-    private static long lastSendTime;
+    private static String nonce;
+    private static long epoch;
+    private static boolean reportPending;
+    private static boolean reportSent;
+    private static long lastQuery;
+    private ReportSender() {}
 
-    private ReportSender() {
-    }
-
-    /** 发送完整指纹报告 */
-    public static void sendReport() {
-        try {
-            if (MinecraftClient.getInstance().getNetworkHandler() == null) {
-                return;
-            }
-            String player = MinecraftClient.getInstance().getSession() != null
-                    ? MinecraftClient.getInstance().getSession().getUsername() : "";
-            JsonObject report = ClientReport.buildReport(KeranClientMod.getConfig(), player);
-            send(REPORT_CHANNEL, report.toString());
-            lastSendTime = System.currentTimeMillis();
-            KeranClientMod.getLogger().info("已向服务器发送指纹报告");
-        } catch (Throwable t) {
-            KeranClientMod.getLogger().warn("发送指纹报告失败: " + t.getMessage());
-        }
-    }
-
-    /** 发送心跳 */
-    public static void sendHeartbeat() {
-        try {
-            if (MinecraftClient.getInstance().getNetworkHandler() == null) {
-                return;
-            }
-            String player = MinecraftClient.getInstance().getSession() != null
-                    ? MinecraftClient.getInstance().getSession().getUsername() : "";
-            JsonObject hb = ClientReport.buildHeartbeat(player);
-            send(HEARTBEAT_CHANNEL, hb.toString());
-        } catch (Throwable t) {
-            KeranClientMod.getLogger().warn("发送心跳失败: " + t.getMessage());
-        }
-    }
-
-    /** 启动心跳循环 (cfg 为 null 时仅心跳不报详细指纹) */
     public static void startHeartbeat(ClientConfig cfg) {
         stopHeartbeat();
+        MinecraftClient client = MinecraftClient.getInstance();
+        connection = client.getNetworkHandler();
         activeConfig = cfg;
-        int seconds = cfg != null ? Math.max(5, cfg.heartbeatSeconds) : 30;
-        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "KeranClient-Heartbeat");
-            t.setDaemon(true);
-            return t;
+        worker = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "KeranClient-Scanner"); t.setDaemon(true); return t;
         });
-        heartbeatExecutor.scheduleAtFixedRate(ReportSender::sendHeartbeat, seconds, seconds, TimeUnit.SECONDS);
-        // 白名单服务器且尚未发送过报告则补发
-        if (cfg != null && lastSendTime == 0) {
-            heartbeatExecutor.schedule(ReportSender::sendReport, 2, TimeUnit.SECONDS);
-        }
+        long session = epoch;
+        int seconds = Math.max(5, Math.min(120, cfg.heartbeatSeconds));
+        worker.scheduleAtFixedRate(() -> client.execute(() -> {
+            if (epoch == session) sendHeartbeat();
+        }), seconds, seconds, TimeUnit.SECONDS);
     }
 
     public static void stopHeartbeat() {
-        if (heartbeatExecutor != null) {
-            heartbeatExecutor.shutdownNow();
-            heartbeatExecutor = null;
-        }
-        activeConfig = null;
+        epoch++;
+        if (worker != null) worker.shutdownNow();
+        worker = null; connection = null; activeConfig = null; nonce = null;
+        reportPending = false; reportSent = false; lastQuery = 0;
     }
 
-    /** 发送任意 JSON 到指定频道(客户端 -> 服务端) */
-    public static void sendJson(Identifier channel, String json) {
-        try {
-            if (MinecraftClient.getInstance().getNetworkHandler() == null) {
-                return;
+    private static boolean allowed() {
+        return worker != null && connection != null && activeConfig != null
+                && activeConfig.isAllowedServer(connection.getConnection().getAddress().toString());
+    }
+
+    public static void acceptChallenge(String challenge) {
+        if (!allowed() || !challenge.matches("[0-9a-fA-F-]{36}")) return;
+        if (!challenge.equals(nonce)) { nonce = challenge; reportSent = false; }
+        if (!reportSent && !reportPending) sendReport();
+    }
+
+    public static void reloadPolicy(ClientConfig cfg) { activeConfig = cfg; }
+
+    public static void sendReport() {
+        if (!allowed() || nonce == null || reportPending) return;
+        reportPending = true;
+        submit(REPORT_CHANNEL, true, false, null);
+    }
+
+    public static void respond(String query) {
+        if (!allowed() || nonce == null || !reportSent) return;
+        int colon = query.indexOf(':');
+        if (colon < 0) return;
+        String type = query.substring(0, colon), requestId = query.substring(colon + 1);
+        if (!requestId.matches("[0-9a-fA-F-]{36}")) return;
+        long now = System.nanoTime();
+        if (lastQuery != 0 && now - lastQuery < TimeUnit.SECONDS.toNanos(2)) return;
+        lastQuery = now;
+        if ("detail".equalsIgnoreCase(type)) submit(DETAIL_CHANNEL, false, false, requestId);
+        else if ("files".equalsIgnoreCase(type) || "modsmd5".equalsIgnoreCase(type) || "packsmd5".equalsIgnoreCase(type))
+            submit(FILES_CHANNEL, false, true, requestId);
+    }
+
+    private static void submit(Identifier channel, boolean report, boolean files, String requestId) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        long session = epoch;
+        String token = nonce;
+        ClientConfig cfg = activeConfig;
+        String player = client.getSession().getUsername();
+        com.google.gson.JsonArray packs = report ? com.keran.client.detect.ResourcePackScanner.enabledPacksJson() : new com.google.gson.JsonArray();
+        java.util.List<String> badPacks = report ? com.keran.client.detect.ResourcePackScanner.detectSuspiciousPacks() : java.util.List.of();
+        worker.execute(() -> {
+            try {
+                JsonObject obj = report ? ClientReport.buildReport(cfg, player, packs, badPacks)
+                        : files ? ClientReport.buildFilesReport(player) : ClientReport.buildDetailReport(player);
+                obj.addProperty("nonce", token);
+                if (requestId != null) obj.addProperty("request_id", requestId);
+                String json = obj.toString();
+                client.execute(() -> {
+                    if (epoch != session || connection != client.getNetworkHandler()) return;
+                    if (!allowed() || !token.equals(nonce)) { if (report) reportPending = false; return; }
+                    boolean sent = sendNow(channel, json);
+                    if (report) { reportPending = false; reportSent = sent; }
+                });
+            } catch (Exception error) {
+                KeranClientMod.getLogger().warn("扫描/上报失败: " + error.getMessage());
+                client.execute(() -> { if (epoch == session && report) reportPending = false; });
             }
-            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-            buf.writeString(json);
-            ClientPlayNetworking.send(channel, buf);
-        } catch (Throwable t) {
-            KeranClientMod.getLogger().warn("发送到 " + channel + " 失败: " + t.getMessage());
-        }
+        });
     }
 
-    private static void send(Identifier channel, String json) {
-        sendJson(channel, json);
+    public static void sendHeartbeat() {
+        if (!allowed() || nonce == null || !reportSent) return;
+        JsonObject obj = ClientReport.buildHeartbeat(MinecraftClient.getInstance().getSession().getUsername());
+        obj.addProperty("nonce", nonce);
+        sendNow(HEARTBEAT_CHANNEL, obj.toString());
+    }
+
+    public static void sendJson(Identifier channel, String json) {
+        MinecraftClient.getInstance().execute(() -> { if (allowed()) sendNow(channel, json); });
+    }
+
+    private static boolean sendNow(Identifier channel, String json) {
+        if (connection != MinecraftClient.getInstance().getNetworkHandler() || !ClientPlayNetworking.canSend(channel)) return false;
+        if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 30000) {
+            KeranClientMod.getLogger().warn("上报超过30000字节，请精简整合包或文件清单"); return false;
+        }
+        try {
+            PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+            buf.writeString(json); ClientPlayNetworking.send(channel, buf); return true;
+        } catch (RuntimeException error) {
+            KeranClientMod.getLogger().warn("发送失败: " + error.getMessage()); return false;
+        }
     }
 }

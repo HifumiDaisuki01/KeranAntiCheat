@@ -67,7 +67,11 @@ public class AimCheck extends Check {
     @Override
     public void onMove(PlayerMoveEvent e, PlayerData data) {
         Player p = e.getPlayer();
-        if (p.isDead()) {
+        if (p.isDead() || data.teleportExemptTicks > 0
+                || plugin.getCheckManager().getTick() - data.lastCombatTick > 60) {
+            data.lastYaw = e.getTo().getYaw(); data.lastPitch = e.getTo().getPitch();
+            data.rotationDeltas.clear(); data.yawDeltas.clear();
+            resetEvidence(data);
             return;
         }
 

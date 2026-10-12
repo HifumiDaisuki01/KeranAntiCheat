@@ -31,6 +31,9 @@ public class CheckManager {
     private final Set<CheckType> disabledByCommand = EnumSet.noneOf(CheckType.class);
     private final Map<CheckType, Integer> totalFlags = new EnumMap<>(CheckType.class);
     private long tick = 0;
+    private final YamlConfiguration records;
+    private final com.keran.kac.data.RecordWriter writer;
+    private final Map<CheckType, Long> lastError = new EnumMap<>(CheckType.class);
 
     /**
      * 事件类型 → 订阅该事件的检测器列表（v3.1, KAC-06）。
@@ -64,6 +67,9 @@ public class CheckManager {
 
     public CheckManager(KeranAntiCheat plugin) {
         this.plugin = plugin;
+        File file = new File(plugin.getDataFolder(), "data/vl.yml");
+        this.records = YamlConfiguration.loadConfiguration(file);
+        this.writer = new com.keran.kac.data.RecordWriter(file.toPath(), plugin.getLogger());
     }
 
     /** 注册所有检测器 */
@@ -109,7 +115,7 @@ public class CheckManager {
         byMask.clear();
         for (Check c : checks) {
             long mask = c.eventMask();
-            for (int bit = 0; bit <= 10; bit++) {
+            for (int bit = 0; bit <= 11; bit++) {
                 long flag = 1L << bit;
                 if ((mask & flag) != 0) {
                     byMask.computeIfAbsent(flag, k -> new ArrayList<>()).add(c);
@@ -134,7 +140,7 @@ public class CheckManager {
     public String describeIndex() {
         StringBuilder sb = new StringBuilder("事件索引: ");
         String[] names = {"move", "dmg-dealt", "dmg-taken", "break", "place", "interact",
-                "consume", "chat", "velocity", "teleport", "tick"};
+                "consume", "chat", "velocity", "teleport", "tick", "inventory"};
         for (int i = 0; i < names.length; i++) {
             List<Check> l = byMask.get(1L << i);
             sb.append(names[i]).append('=').append(l == null ? 0 : l.size());
@@ -173,12 +179,20 @@ public class CheckManager {
     }
 
     public void addPlayer(Player p) {
-        playerData.put(p.getUniqueId(), new PlayerData(p));
+        PlayerData d = new PlayerData(p);
+        org.bukkit.configuration.ConfigurationSection sec = records.getConfigurationSection("players." + p.getUniqueId());
+        if (sec != null) {
+            d.deserialize(sec);
+            long elapsed = Math.max(0, System.currentTimeMillis() - sec.getLong("saved-at", System.currentTimeMillis()));
+            d.decayVl((elapsed / 10000L) * plugin.getConfigManager().getVlDecay());
+        }
+        playerData.put(p.getUniqueId(), d);
     }
 
     public void removePlayer(Player p) {
         PlayerData d = playerData.remove(p.getUniqueId());
         exemptCache.remove(p.getUniqueId());
+        plugin.getBehaviorContext().remove(p.getUniqueId());
         if (d != null) {
             savePlayerData(p.getUniqueId(), d);
         }
@@ -186,16 +200,27 @@ public class CheckManager {
 
     /** 保存单个玩家数据到 data/vl.yml (合并写入) */
     public void savePlayerData(UUID uuid, PlayerData d) {
-        File file = new File(plugin.getDataFolder(), "data" + File.separator + "vl.yml");
-        try {
-            YamlConfiguration yml = file.exists()
-                    ? YamlConfiguration.loadConfiguration(file)
-                    : new YamlConfiguration();
-            d.serialize(yml.createSection("players." + uuid.toString()));
-            file.getParentFile().mkdirs();
-            yml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("保存玩家 " + d.getName() + " 数据失败: " + e.getMessage());
+        updateRecord(uuid, d);
+        writer.submit(records.saveToString());
+    }
+
+    private void updateRecord(UUID uuid, PlayerData d) {
+        d.serialize(records.createSection("players." + uuid));
+    }
+
+    public void resetPlayerRecord(UUID uuid) {
+        PlayerData d = playerData.get(uuid);
+        if (d != null) { d.resetAllVl(); updateRecord(uuid, d); }
+        else { records.set("players." + uuid, null); }
+        writer.submit(records.saveToString());
+    }
+
+    public void reportError(Check check, Throwable error) {
+        long now = System.currentTimeMillis();
+        if (now - lastError.getOrDefault(check.getType(), 0L) >= 30000) {
+            lastError.put(check.getType(), now);
+            plugin.getLogger().log(java.util.logging.Level.WARNING,
+                    "检测器 " + check.getId() + " 执行失败（日志限频30秒）", error);
         }
     }
 
@@ -299,7 +324,7 @@ public class CheckManager {
         if (player == null || !player.isOnline()) {
             return;
         }
-        if (!isActive(type)) {
+        if (playerData.get(data.getUuid()) != data || !Double.isFinite(weight) || weight <= 0 || !isActive(type)) {
             return;
         }
         if (isExempt(player, type)) {
@@ -332,16 +357,17 @@ public class CheckManager {
         }
 
         // 处罚阶梯
+        if (cfg.isObserveOnly(type)) return;
         int kickVl = cfg.getKickVl(type);
         int banVl = cfg.getBanVl(type);
         if (banVl > 0 && vl >= banVl) {
             data.resetVl(type);
             data.addPunishment(type);
-            plugin.getBanManager().ban(player, type.getDisplayName(), 0);
+            plugin.getBanManager().ban(player, type.getDisplayName(),
+                    Math.max(0, cfg.get().getInt("punishments.auto-ban-hours", 24)));
             player.kickPlayer(ChatColor.translateAlternateColorCodes('&',
                     cfg.getBanMessage().replace("%reason%", type.getDisplayName() + " (vl=" + trim(vl) + ")")));
         } else if (kickVl > 0 && vl >= kickVl) {
-            data.resetVl(type);
             data.addPunishment(type);
             player.kickPlayer(ChatColor.translateAlternateColorCodes('&',
                     cfg.getKickMessage().replace("%reason%", type.getDisplayName() + " (vl=" + trim(vl) + ")")));
@@ -400,7 +426,8 @@ public class CheckManager {
             }
             try {
                 c.onTick();
-            } catch (Exception ignored) {
+            } catch (Exception error) {
+                reportError(c, error);
             }
         }
     }
@@ -413,34 +440,22 @@ public class CheckManager {
 
     /** 保存所有在线玩家 vl 到 data/vl.yml */
     public void saveAllData() {
-        File file = new File(plugin.getDataFolder(), "data" + File.separator + "vl.yml");
-        YamlConfiguration yml = new YamlConfiguration();
-        for (PlayerData d : playerData.values()) {
-            d.serialize(yml.createSection("players." + d.getUuid().toString()));
+        if (!Bukkit.isPrimaryThread()) {
+            throw new IllegalStateException("Record snapshots must be made on the server thread");
         }
-        try {
-            file.getParentFile().mkdirs();
-            yml.save(file);
-        } catch (IOException e) {
-            plugin.getLogger().warning("保存违规数据失败: " + e.getMessage());
-        }
+        for (PlayerData d : playerData.values()) updateRecord(d.getUuid(), d);
+        writer.submit(records.saveToString());
     }
 
-    /** 载入离线玩家数据(供 /kac info 查询) */
+    public void shutdown() {
+        saveAllData();
+        writer.close();
+    }
+
     public PlayerData loadPlayerData(UUID uuid, String name) {
-        File file = new File(plugin.getDataFolder(), "data" + File.separator + "vl.yml");
-        if (file.exists()) {
-            try {
-                YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
-                String path = "players." + uuid.toString();
-                if (yml.contains(path)) {
-                    PlayerData d = new PlayerData(uuid, name);
-                    d.deserialize(yml.getConfigurationSection(path));
-                    return d;
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return new PlayerData(uuid, name);
+        PlayerData d = new PlayerData(uuid, name);
+        org.bukkit.configuration.ConfigurationSection sec = records.getConfigurationSection("players." + uuid);
+        if (sec != null) d.deserialize(sec);
+        return d;
     }
 }

@@ -14,7 +14,7 @@ import net.minecraft.client.MinecraftClient;
 public class KeranClientMod implements ClientModInitializer {
 
     public static final String MOD_ID = "keranclient";
-    public static final String MOD_VERSION = "2.0.0";
+    public static final String MOD_VERSION = "2.1.0";
 
     private static ClientConfig config;
 
@@ -22,27 +22,8 @@ public class KeranClientMod implements ClientModInitializer {
     public void onInitializeClient() {
         config = ClientConfig.load();
 
-        // 客户端启动时后台预计算 mods/材质包目录整体 MD5(进服上报时直接使用缓存)
-        com.keran.client.detect.FileScanner.precomputeDirMd5();
-
-        // 进服后延迟 3 秒发送详细报告(含全量 mods/材质包文件清单与 MD5), 之后每 30 秒心跳
-        // 检测强制开启, 无法关闭
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            if (!config.isAllowedServer(handler.getConnection().getAddress().toString())) {
-                // 不在白名单的服务器: 只发心跳, 不发详细指纹(隐私保护)
-                ReportSender.startHeartbeat(null);
-                return;
-            }
-            MinecraftClient.getInstance().execute(() -> {
-                try {
-                    Thread.sleep(3000);
-                } catch (InterruptedException ignored) {
-                }
-                ReportSender.sendReport();
-            });
-            ReportSender.startHeartbeat(config);
-        });
-
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
+                ReportSender.startHeartbeat(config));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
                 ReportSender.stopHeartbeat());
 
@@ -67,5 +48,6 @@ public class KeranClientMod implements ClientModInitializer {
 
     public static void reloadConfig() {
         config = ClientConfig.load();
+        ReportSender.reloadPolicy(config);
     }
 }
