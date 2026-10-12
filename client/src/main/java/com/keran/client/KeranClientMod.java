@@ -14,7 +14,8 @@ import net.minecraft.client.MinecraftClient;
 public class KeranClientMod implements ClientModInitializer {
 
     public static final String MOD_ID = "keranclient";
-    public static final String MOD_VERSION = "2.1.0";
+    public static final String MOD_VERSION = net.fabricmc.loader.api.FabricLoader.getInstance()
+            .getModContainer(MOD_ID).orElseThrow().getMetadata().getVersion().getFriendlyString();
 
     private static ClientConfig config;
 

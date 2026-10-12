@@ -1,5 +1,5 @@
 name: KeranAntiCheat
-version: 3.2.0
+version: ${project.version}
 main: com.keran.kac.KeranAntiCheat
 api-version: 1.20
 author: Keran Technology

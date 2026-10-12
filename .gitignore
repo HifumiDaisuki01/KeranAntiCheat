@@ -33,3 +33,7 @@ logs/
 /ops.json
 /usercache.json
 /whitelist.json
+
+# 成品通过 GitHub Releases 分发
+/server/*.jar
+/client/*.jar

@@ -33,7 +33,7 @@ public final class ClientReport {
 
         // 基础
         root.addProperty("type", "report");
-        root.addProperty("v", "2.1.0");
+        root.addProperty("v", com.keran.client.KeranClientMod.MOD_VERSION);
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 
@@ -120,7 +120,7 @@ public final class ClientReport {
     public static JsonObject buildHeartbeat(String playerName) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "heartbeat");
-        o.addProperty("v", "2.1.0");
+        o.addProperty("v", com.keran.client.KeranClientMod.MOD_VERSION);
         o.addProperty("player", playerName == null ? "" : playerName);
         o.addProperty("ts", System.currentTimeMillis());
         return o;
@@ -133,7 +133,7 @@ public final class ClientReport {
     public static JsonObject buildDetailReport(String playerName) {
         JsonObject root = new JsonObject();
         root.addProperty("type", "detail");
-        root.addProperty("v", "2.1.0");
+        root.addProperty("v", com.keran.client.KeranClientMod.MOD_VERSION);
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 
@@ -156,7 +156,7 @@ public final class ClientReport {
     public static JsonObject buildFilesReport(String playerName) {
         JsonObject root = new JsonObject();
         root.addProperty("type", "files");
-        root.addProperty("v", "2.1.0");
+        root.addProperty("v", com.keran.client.KeranClientMod.MOD_VERSION);
         root.addProperty("player", playerName == null ? "" : playerName);
         root.addProperty("ts", System.currentTimeMillis());
 

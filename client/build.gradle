@@ -2,7 +2,9 @@ plugins {
     id 'fabric-loom' version '1.7.4'
 }
 
-version = project.mod_version
+// The server POM is the single release-version source for both modules.
+version = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+        .parse(file('../server/pom.xml')).documentElement.getElementsByTagName('version').item(0).textContent.trim()
 group = project.maven_group
 
 repositories {

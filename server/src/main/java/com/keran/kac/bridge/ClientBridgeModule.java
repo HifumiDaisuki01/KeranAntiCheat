@@ -146,9 +146,9 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
 
     private void validateEnvelope(Player player, JsonObject obj) {
         if (!player.getName().equalsIgnoreCase(safe(obj, "player"))
-                || !"2.1.0".equals(safe(obj, "v"))
+                || !(plugin.getDescription().getVersion().equals(safe(obj, "v")) || "2.1.0".equals(safe(obj, "v")))
                 || !java.util.Objects.equals(sessions.get(player.getUniqueId()), safe(obj, "nonce")))
-            throw new IllegalArgumentException("客户端版本或会话不匹配，请升级 KeranClient 2.1.0");
+            throw new IllegalArgumentException("客户端版本或会话不匹配，请升级配套 KeranClient");
         if (!obj.has("ts") || !obj.get("ts").isJsonPrimitive()) throw new IllegalArgumentException("缺少时间戳");
         long ts = obj.get("ts").getAsLong();
         long now = System.currentTimeMillis();
@@ -541,7 +541,7 @@ public final class ClientBridgeModule implements PluginMessageListener, Listener
             if (now - start >= plugin.getConfigManager().getClientWaitSeconds() * 1000L) {
                 if (plugin.getConfigManager().isStrictClientMode() && !bypassClient(p)) {
                     p.kickPlayer(ChatColor.translateAlternateColorCodes('&', plugin.getConfigManager().get().getString(
-                            "join.kick-message", "§c[KAC] 请安装 KeranClient 2.1.0 后重新加入")));
+                            "join.kick-message", "§c[KAC] 请安装配套 KeranClient 后重新加入")));
                 }
                 joinTimes.remove(id);
             }

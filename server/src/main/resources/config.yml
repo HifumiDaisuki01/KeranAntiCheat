@@ -1,7 +1,7 @@
 config-version: 4
 
 # ============================================================
-#  Keran Anti Cheat 配置文件 v3.2.0 (Paper 1.20.1 枪械 PVP / PVE 刷怪服)
+#  Keran Anti Cheat 配置文件 v3.2.1 (Paper 1.20.1 枪械 PVP / PVE 刷怪服)
 #  命令: /kac help   权限: kac.admin(管理) kac.notify(告警) kac.bypass(豁免)
 #
 #  【v3.0 检测引擎说明】
